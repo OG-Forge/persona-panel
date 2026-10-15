@@ -1,0 +1,11 @@
+{
+  "name": "visual",
+  "description": "Visual design only: look, typography, colour, layout, imagery, hierarchy, mobile fit. Business model, pricing, payments and policies are out of scope.",
+  "outcomes": ["love", "okay", "dislike"],
+  "outcome_labels": {"love": "Love the look", "okay": "It's okay", "dislike": "Dislike the look"},
+  "scores": ["first_impression", "aesthetics", "readability", "hierarchy", "consistency", "mobile_fit"],
+  "score_labels": {"first_impression": "First impression", "aesthetics": "Aesthetics", "readability": "Readability",
+                   "hierarchy": "Visual hierarchy", "consistency": "Consistency", "mobile_fit": "Fits the screen"},
+  "categories": ["typography", "color", "layout", "spacing", "imagery", "hierarchy", "consistency", "branding",
+                 "clutter", "readability", "mobile", "accessibility", "other"]
+}

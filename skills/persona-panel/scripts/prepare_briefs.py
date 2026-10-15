@@ -102,6 +102,7 @@ def main():
     ap.add_argument("--max-images", type=int, default=10)
     ap.add_argument("--focus", default="", help="Specific questions the owner wants the panel to answer")
     ap.add_argument("--python", default="python", help="Python executable walkers should use for walk.py")
+    ap.add_argument("--lens", default="", help="Focus lens from references/lenses (e.g. visual); default = full customer review")
     ap.add_argument("--only", nargs="*", help="Write redo briefs for just these panel persona ids (missing results)")
     args = ap.parse_args()
 
@@ -120,6 +121,14 @@ def main():
     else:
         manifest, digest = load_capture(run)
         panel_rules = (REF / "panelist-site.md").read_text(encoding="utf-8")
+    if args.lens:
+        # A lens replaces the panel instructions and the output schema, and tells aggregate/report its vocabulary.
+        lens_dir = REF / "lenses"
+        if not (lens_dir / f"{args.lens}.md").exists():
+            raise SystemExit(f"Unknown lens '{args.lens}'. Available: {[f.stem for f in lens_dir.glob('*.md')]}")
+        panel_rules = (lens_dir / f"{args.lens}.md").read_text(encoding="utf-8")
+        schema = ""
+        (run / "lens.json").write_text((lens_dir / f"{args.lens}.json").read_text(encoding="utf-8"), encoding="utf-8")
 
     panel = batches["panel"]
     if args.only:
@@ -145,7 +154,7 @@ def main():
                       *[f"- {i}" for i in imgs], "",
                       "## Site digest (measured facts from the capture; trust these over guesses)",
                       profile_digest(digest, b["profile"])]
-        parts += ["## Your personas", *cards, "", "## Output", f"Write ONE file: `{out}`", schema]
+        parts += ["## Your personas", *cards, "", "## Output", f"Write ONE file: `{out}`" + (" (format: see Output schema above)" if not schema else ""), schema]
         (run / "briefs" / f"{b['batch_id']}.md").write_text("\n".join(parts), encoding="utf-8")
 
     if mode == "site" and batches["live"]:

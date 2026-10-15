@@ -51,8 +51,11 @@ def who(p):
     return " · ".join(b for b in bits if b)
 
 
+OUT_CLASS = {}
+
+
 def outcome_chip(o):
-    return f'<span class="chip out-{e(o)}">{e(o)}</span>'
+    return f'<span class="chip out-{OUT_CLASS.get(o, "no")}">{e(o)}</span>'
 
 
 def bar(pct, cls=""):
@@ -68,6 +71,13 @@ def render(run, title, subject):
     n = agg["n_results"]
     ov = agg["overall"]
     mode = agg.get("mode", "site")
+    lens = agg.get("lens") or {}
+    outs = lens.get("outcomes", ["buy", "maybe", "no"])
+    out_labels = lens.get("outcome_labels", {"buy": "Would buy", "maybe": "maybe", "no": "no"})
+    score_keys = lens.get("scores", ["trust", "clarity", "ease", "value"])
+    score_labels = lens.get("score_labels", {})
+    OUT_CLASS.update(dict(zip(outs, ["buy", "maybe", "no"])))
+    seg_scores = score_keys[:3]
 
     themes = sorted(syn.get("themes", []), key=lambda t: (-int(t.get("impact", 0)), SEV_ORDER.get(t.get("severity"), 9),
                                                           -len(t.get("persona_ids", []))))
@@ -100,10 +110,9 @@ def render(run, title, subject):
             positive = s["buy_pct"] + s["maybe_pct"]
             rows.append(f"<tr><td>{e(label(v))}</td><td class=num>{s['n']}</td>"
                         f"<td>{bar(positive, 'pos')}<span class=num>{positive}%</span></td>"
-                        f"<td class=num>{s['scores'].get('trust') or '–'}</td><td class=num>{s['scores'].get('clarity') or '–'}</td>"
-                        f"<td class=num>{s['scores'].get('ease') or '–'}</td></tr>")
+                        f"" + "".join(f"<td class=num>{s['scores'].get(k) or '–'}</td>" for k in seg_scores) + "</tr>")
         seg_html.append(f"""<details class="seg"><summary>{e(SEG_LABELS[key])}</summary>
-<table><thead><tr><th></th><th class=num>n</th><th>buy + maybe</th><th class=num>trust</th><th class=num>clarity</th><th class=num>ease</th></tr></thead>
+<table><thead><tr><th></th><th class=num>n</th><th>{e(outs[0])} + {e(outs[1])}</th>{"".join(f"<th class=num>{e(score_labels.get(k, label(k)).lower())}</th>" for k in seg_scores)}</tr></thead>
 <tbody>{''.join(rows)}</tbody></table></details>""")
 
     live_html = []
@@ -137,10 +146,9 @@ def render(run, title, subject):
 
     sc = ov["scores"]
     tiles = "".join([
-        tile("Would buy", f"{ov['buy_pct']}%", f"maybe {ov['maybe_pct']}% · no {ov['no_pct']}%"),
-        tile("Got the offer quickly", f"{ov.get('understood_offer_pct', 0)}%", "understood what it is"),
-        tile("Trust", f"{sc.get('trust') or '–'}/5"), tile("Clarity", f"{sc.get('clarity') or '–'}/5"),
-        tile("Ease", f"{sc.get('ease') or '–'}/5"), tile("Value", f"{sc.get('value') or '–'}/5"),
+        tile(out_labels.get(outs[0], outs[0]), f"{ov['buy_pct']}%", f"{outs[1]} {ov['maybe_pct']}% · {outs[2]} {ov['no_pct']}%"),
+        *([] if lens else [tile("Got the offer quickly", f"{ov.get('understood_offer_pct', 0)}%", "understood what it is")]),
+        *[tile(score_labels.get(k, label(k).capitalize()), f"{sc.get(k) or '–'}/5") for k in score_keys],
     ])
     summary = "".join(f"<li>{e(s)}</li>" for s in syn.get("summary", []))
     insights = "".join(f"<li>{e(s)}</li>" for s in syn.get("segment_insights", []))
@@ -177,10 +185,10 @@ details{{margin:6px 0}}summary{{cursor:pointer}}.seg{{background:var(--card);bor
 .voices{{padding-left:18px}}q{{font-style:italic}}
 @media (max-width:600px){{.leftat li{{grid-template-columns:110px 1fr 32px}}.bar{{width:70px}}h1{{font-size:23px}}}}
 </style></head><body><main>
-<p class="muted">Persona panel · {e(mode)} review · {e(agg.get('market'))} market · {n} simulated customers{f" ({agg['n_live']} walked the live site)" if agg.get('n_live') else ''}</p>
+<p class="muted">Persona panel · {e(mode)} review{f" · {e(lens.get('name'))} lens" if lens else ""} · {e(agg.get('market'))} market · {n} simulated customers{f" ({agg['n_live']} walked the live site)" if agg.get('n_live') else ''}</p>
 <h1>{e(title)}</h1><p class="muted">{e(subject)}</p>
 <p class="headline">{e(syn.get('headline', ''))}</p><ul>{summary}</ul>
-<div class="tiles">{tiles}</div>{stack}<p class="muted">green = would buy · amber = maybe · red = no</p>
+<div class="tiles">{tiles}</div>{stack}<p class="muted">green = {e(outs[0])} · amber = {e(outs[1])} · red = {e(outs[2])}</p>
 <h2>What to fix, in order</h2>{''.join(theme_html(i + 1, t) for i, t in enumerate(themes)) or '<p class=muted>No synthesis yet.</p>'}
 {f'<h2>How segments differed</h2><ul>{insights}</ul>' if insights else ''}
 <h2>Segment breakdown</h2>{''.join(seg_html)}
@@ -189,7 +197,7 @@ details{{margin:6px 0}}summary{{cursor:pointer}}.seg{{background:var(--card);bor
 {f'<h2>What works</h2><ul>{strengths}</ul>' if strengths else ''}
 {f'<h2>Validate with real customers</h2><ul>{questions}</ul>' if questions else ''}
 <h2>All {n} personas</h2>
-<div class="filters"><button class="on" data-f="all">All</button><button data-f="buy">Buy</button><button data-f="maybe">Maybe</button><button data-f="no">No</button></div>
+<div class="filters"><button class="on" data-f="all">All</button>{"".join(f'<button data-f="{e(o)}">{e(o.capitalize())}</button>' for o in outs)}</div>
 <div id="gallery">{''.join(gallery)}</div>
 <h2>Method and caveats</h2>
 <p class="muted">Personas were sampled from weighted demographic distributions with coherence rules and guaranteed coverage of minority segments, then role-played by small AI models in batches. {'Panelists reviewed screenshots and measured page facts (load times on a throttled budget phone, accessibility checks); a few walked the live site in a real browser.' if mode == 'site' else 'Panelists reacted to the written concept.'} These are simulated customers: they're good at surfacing friction, confusion and missing information, but they don't predict real conversion rates. Confirm the top themes with a handful of real customers before big changes.</p>

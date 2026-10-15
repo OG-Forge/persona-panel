@@ -31,6 +31,8 @@ You, the orchestrator, only run scripts and dispatch agents. **Don't read screen
 - **Size:** `--n` (default 100, at least 30 to be useful).
 - **Live walkers** (site mode only): default 3. Use 0 to save tokens, or up to 6 when checkout flows matter.
 - **Focus questions** (optional): what the owner most wants to learn. Pass them as `--focus`.
+- **Lens** (optional): narrows what the panel judges. `--lens visual` covers looks only: typography, colour, layout, imagery, hierarchy and mobile fit, ignoring what's sold and how it's bought. Lenses live in `references/lenses/<name>.md` (instructions plus schema) and `<name>.json` (outcome words, score keys). Add a new lens by copying `visual.*`. A lens run usually needs no live walkers (`--live 0`).
+- **Re-running on the same site:** copy `capture/` (and any overrides) from the earlier run into the new run folder instead of capturing again. The same `--seed` gives the same personas, so lens runs compare like for like.
 
 Then tell the user the plan and rough cost in one line. Example: "100 personas = 10 Haiku batches in waves of 3, plus 3 live walkers and 1 synthesis pass."
 
@@ -50,7 +52,7 @@ Skim only the first ~15 lines of `RUN/capture/digest.md`. If it says PASSWORD/LO
 
 ```
 PY SKILL_DIR/scripts/sample_personas.py --run RUN --mode site|concept --market india|global|RUN/market.json --n 100 --live 3 [--overrides RUN/overrides.json]
-PY SKILL_DIR/scripts/prepare_briefs.py --run RUN --python PY [--focus "..."]
+PY SKILL_DIR/scripts/prepare_briefs.py --run RUN --python PY [--focus "..."] [--lens visual] [--max-images 12]
 ```
 
 ## 3. Run the panel in waves
@@ -69,7 +71,7 @@ After the first wave, spot-check one result file. Check that it's valid JSON, th
 PY SKILL_DIR/scripts/aggregate.py --run RUN
 ```
 
-If it reports missing personas or invalid files, re-dispatch only those batches, once. Then run one synthesis agent with `model: "sonnet"`:
+If it reports missing personas, write small redo briefs with `prepare_briefs.py ... --only p074 p081` (same flags as before) and dispatch `briefs/<batch>_redo.md`, once. Don't re-run a whole batch for one missing persona. If a whole file is invalid, re-dispatch that batch once. Then run one synthesis agent with `model: "sonnet"`:
 
 > Read `SKILL_DIR/references/synthesis.md` and follow it for the run folder `RUN`. Reply with only: done
 
