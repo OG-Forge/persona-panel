@@ -24,12 +24,11 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-DEVICES = {
-    "mobile": {"size": (360, 780), "ua": "Mozilla/5.0 (Linux; Android 13; SM-A145F) AppleWebKit/537.36 (KHTML, like Gecko) "
-                                         "Chrome/124.0.0.0 Mobile Safari/537.36", "touch": True},
-    "desktop": {"size": (1366, 800), "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                                           "Chrome/124.0.0.0 Safari/537.36", "touch": False},
-}
+from devices import PROFILES
+
+# Same device sizes as capture.py and probe.py.
+DEVICES = {name: {"size": (p["viewport"]["width"], p["viewport"]["height"]), "ua": p["ua"], "touch": p["mobile"]}
+           for name, p in PROFILES.items()}
 
 LOOK_JS = r"""
 (prefix) => {
@@ -148,12 +147,14 @@ def look(page, session, state):
     shot = session / f"step_{state['step']:02d}.jpg"
     page.screenshot(path=str(shot), type="jpeg", quality=65)
     state_path(session).write_text(json.dumps(state))
-    print(f"URL: {info['url']}\nTITLE: {info['title']}\nSCROLL: {info['scrollPct']}% of page seen")
+    pos = page.evaluate("[Math.round(scrollY), document.documentElement.scrollHeight, innerHeight]")
+    print(f"URL: {info['url']}\nTITLE: {info['title']}\n"
+          f"SCROLL: at {pos[0]}px of a {pos[1]}px page (screen is {pos[2]}px tall, {info['scrollPct']}% seen)")
     print(f"SCREENSHOT: {shot}")
     print("CLICKABLE IN VIEW:")
     print("\n".join(info["items"]) or "(nothing clickable in view)")
     visible = info["text"]
-    print("PAGE TEXT (start):", visible[:700].replace("\n", " | "))
+    print("ON-SCREEN TEXT:", visible[:700].replace("\n", " | "))
 
 
 def start(session, url, device):

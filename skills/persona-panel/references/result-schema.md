@@ -13,7 +13,8 @@ The file is a JSON array with one object per persona, written in a single Write 
     "price_feel": "cheap | fair | pricey | too_expensive | unclear",
     "issues": [
       {"where": "product", "severity": "blocker | major | minor", "category": "trust",
-       "what": "≤20 words: the problem as this persona experienced it", "fix": "≤15 words: concrete change"}
+       "what": "≤20 words: the problem as this persona experienced it", "fix": "≤15 words: concrete change",
+       "shot": "the screenshot path from the list that shows it, or a measured-check id like u004, or null"}
     ],
     "liked": ["≤10 words"],
     "would_change_mind": "≤20 words: the single thing that would turn no/maybe into yes",

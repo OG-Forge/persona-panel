@@ -22,7 +22,7 @@ def main():
     if not PY.exists():
         run(sys.executable, "-m", "venv", VENV)
     run(PY, "-m", "pip", "install", "-q", "--upgrade", "pip")
-    run(PY, "-m", "pip", "install", "-q", "playwright>=1.50")
+    run(PY, "-m", "pip", "install", "-q", "playwright>=1.50", "pillow>=10")
     run(PY, "-m", "playwright", "install", "chromium")
     print(f"\nReady. Python for this skill: {PY}")
 

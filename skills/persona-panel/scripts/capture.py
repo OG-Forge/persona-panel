@@ -21,20 +21,13 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 import asyncio
 
+from PIL import Image
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
-PROFILES = {
-    "mobile": {
-        "viewport": {"width": 360, "height": 780}, "device_scale_factor": 1, "is_mobile": True, "has_touch": True,
-        "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-A145F) AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/124.0.0.0 Mobile Safari/537.36",
-    },
-    "desktop": {
-        "viewport": {"width": 1366, "height": 800}, "device_scale_factor": 1,
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/124.0.0.0 Safari/537.36",
-    },
-}
+from devices import PROFILES, context_options
+
+# Device sizes live in devices.py (shared with probe.py and walk.py).
+MAX_SHOT_WIDTH = 1366   # wider screenshots are downscaled: same layout, ~40% fewer image tokens for the panel
 
 # Throttled load is only measured for the first pages of the mobile profile.
 SLOW_4G = {"offline": False, "latency": 150, "downloadThroughput": 1.6 * 1024 * 1024 / 8,
@@ -202,6 +195,12 @@ async def settle(page):
     await page.wait_for_timeout(500)
 
 
+def shrink(path):
+    img = Image.open(path)
+    if img.width > MAX_SHOT_WIDTH:
+        img.resize((MAX_SHOT_WIDTH, round(img.height * MAX_SHOT_WIDTH / img.width))).save(path, quality=70)
+
+
 async def slice_screens(page, out_dir, max_slices):
     vh = page.viewport_size["height"]
     height = await page.evaluate("document.documentElement.scrollHeight")
@@ -211,9 +210,11 @@ async def slice_screens(page, out_dir, max_slices):
         if y >= height:
             break
         await page.evaluate(f"window.scrollTo(0, {y})")
-        await page.wait_for_timeout(250)
+        # Long enough for scroll-reveal animations to finish; at 250ms personas saw half-animated boxes as bugs.
+        await page.wait_for_timeout(900)
         path = out_dir / f"screen_{i + 1:02d}.jpg"
         await page.screenshot(path=str(path), type="jpeg", quality=70)
+        shrink(path)
         shots.append(path.name)
     await page.evaluate("window.scrollTo(0, 0)")
     return shots, height
@@ -228,7 +229,7 @@ NAV_TIMING_JS = """() => { const n = performance.getEntriesByType('navigation')[
 
 
 async def throttled_load(browser, url, profile):
-    ctx = await browser.new_context(**PROFILES[profile])
+    ctx = await browser.new_context(**context_options(profile))
     page = await ctx.new_page()
     cdp = await ctx.new_cdp_session(page)
     await cdp.send("Network.enable")
@@ -246,7 +247,7 @@ async def throttled_load(browser, url, profile):
 
 
 async def discover_links(browser, url, profile):
-    ctx = await browser.new_context(**PROFILES[profile])
+    ctx = await browser.new_context(**context_options(profile))
     page = await ctx.new_page()
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
@@ -260,7 +261,7 @@ async def discover_links(browser, url, profile):
 
 
 async def capture_page(browser, url, profile, out_dir, max_slices):
-    ctx = await browser.new_context(**PROFILES[profile])
+    ctx = await browser.new_context(**context_options(profile))
     page = await ctx.new_page()
     console_errors, failed = [], []
     page.on("console", lambda m: m.type == "error" and len(console_errors) < 10 and console_errors.append(m.text[:200]))
@@ -372,7 +373,7 @@ async def run_capture(args):
         await browser.close()
 
     digest = [f"# Site capture: {args.url}",
-              f"Captured {manifest['captured_at']}. Profiles: mobile = 360x780 budget Android, desktop = 1366x800.",
+              f"Captured {manifest['captured_at']}. Devices: " + "; ".join(f"{p} = {PROFILES[p]['label']}" for p in profiles) + ".",
               "Screens are consecutive viewport-height slices from the top of each page (screen_01 is what you see on arrival).", ""]
     for idx, url in enumerate(pages):
         slug, kind = slug_for(url, idx), classify(url)
@@ -398,7 +399,7 @@ def main():
     ap.add_argument("--url", required=True)
     ap.add_argument("--run", required=True)
     ap.add_argument("--max-pages", type=int, default=12)
-    ap.add_argument("--profiles", default="mobile,desktop")
+    ap.add_argument("--profiles", default="mobile,tablet,laptop,desktop")
     ap.add_argument("--extra-urls", nargs="*", default=[])
     ap.add_argument("--max-slices", type=int, default=8)
     ap.add_argument("--throttled-pages", type=int, default=3)

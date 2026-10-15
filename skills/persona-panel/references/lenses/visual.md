@@ -46,7 +46,8 @@ Write a JSON array with one object per persona, in a single Write call. Keep str
     "scores": {"first_impression": 3, "aesthetics": 4, "readability": 2, "hierarchy": 3, "consistency": 4, "mobile_fit": 3},
     "issues": [
       {"where": "home", "severity": "blocker | major | minor", "category": "typography",
-       "what": "≤20 words: the visual problem as this persona experienced it, with screen ref", "fix": "≤15 words: concrete design change"}
+       "what": "≤20 words: the visual problem as this persona experienced it, with screen ref", "fix": "≤15 words: concrete design change",
+       "shot": "the screenshot path from the list that shows it, or a measured-check id like u004, or null"}
     ],
     "liked": ["≤10 words, a specific visual element"],
     "would_change_mind": "≤20 words: the single visual change that would most improve it for them",

@@ -11,6 +11,9 @@ Turn the persona panel's raw issues into a short, prioritised fix list for the o
 - **Be specific.** Each `fix` is a concrete change someone could ship ("Add a 'COD available' badge under the price on product pages"), not advice ("improve trust").
 - **Be honest about noise.** If a theme comes from one persona and looks speculative, drop it or put it in `open_questions`.
 - **Keep the quick wins:** high impact, low effort.
+- **Measured UX checks** (the `u###` lines, if present) are facts from a real browser on each device. Make each important group a theme, or merge it into the persona theme it explains. Put its id in `probe_ids`, and include in `persona_ids` the personas who hit the same thing.
+- **Every theme gets evidence screenshots:** 1-3 ids in `shots`, chosen from the `[s12]` tags on issue lines and/or the `u###` check ids. Prefer the screenshot that shows the problem most clearly (measured-check shots are annotated). A theme with no screenshot is allowed only for things that can't be pictured.
+- **Say which screens are affected** in `devices`, using phone, tablet, laptop and desktop.
 
 ## synthesis.json
 
@@ -20,7 +23,8 @@ Turn the persona panel's raw issues into a short, prioritised fix list for the o
   "summary": ["3-5 sentences: the most important things the panel showed"],
   "themes": [
     {"title": "Short name", "severity": "critical | high | medium | low", "where": "product",
-     "persona_ids": ["p004", "p017"], "who": "Segments most affected, with numbers",
+     "persona_ids": ["p004", "p017"], "probe_ids": ["u004"], "shots": ["u004", "s12"], "devices": ["laptop", "desktop"],
+     "who": "Segments most affected, with numbers",
      "evidence": "≤40 words: what personas saw or said", "fix": "Concrete change",
      "effort": "low | medium | high", "impact": 5}
   ],

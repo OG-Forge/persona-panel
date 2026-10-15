@@ -198,6 +198,15 @@ def ensure_coverage(rng, personas, market, locked):
                 locked.add((key, id(chosen)))
 
 
+def view_profile_for(rng, device):
+    """Which captured screen this persona sees (see devices.py)."""
+    if device == "tablet":
+        return "tablet"
+    if device == "desktop_laptop":
+        return "laptop" if rng.random() < 0.65 else "desktop"
+    return "mobile"
+
+
 def enrich(rng, i, persona, market, mode):
     gender = persona.get("gender", "female")
     names = market.get("names", {})
@@ -219,7 +228,7 @@ def enrich(rng, i, persona, market, mode):
         "age": rng.randint(lo, hi),
         "city": city,
         "occupation": occupation,
-        "view_profile": "desktop" if device in ("desktop_laptop", "tablet") else "mobile",
+        "view_profile": view_profile_for(rng, device),
         "attention_budget_screens": attention,
         "entry_page": ENTRY_PAGE.get(persona.get("traffic_source"), "home"),
     })
@@ -265,11 +274,27 @@ def persona_card(p, market, mode="site"):
         k = attr["key"]
         if k in p and k not in CARD_HANDLED:
             lines.append(phrase(market, k, p[k]))
+    if mode == "site" and p.get("view_profile") in ("tablet", "laptop", "desktop"):
+        lines.append({"tablet": "Screen: a tablet held upright (820x1180).", "laptop": "Screen: a laptop with a 1366x768 browser window.",
+                      "desktop": "Screen: a big 1920x1080 monitor."}[p["view_profile"]])
     if mode == "site" and "patience" in p:
         lines.append(f"Patience: {p['patience']} (looks at about {p['attention_budget_screens']} screens before deciding to stay or leave).")
     if mode == "site" and p.get("accessibility_need", "none") != "none":
         lines.append(phrase(market, "accessibility_need", p["accessibility_need"]))
     return " ".join(l for l in lines if l)
+
+
+def ensure_screens(rng, personas, market, minimum):
+    """Guarantee enough tablet/laptop/desktop reviewers; phone-heavy markets would otherwise leave PC layouts untested."""
+    for prof, device in (("tablet", "tablet"), ("laptop", "desktop_laptop"), ("desktop", "desktop_laptop")):
+        have = [p for p in personas if p["view_profile"] == prof]
+        donors = [p for p in personas if p["view_profile"] == "mobile"]
+        rng.shuffle(donors)
+        for p in donors[:max(0, minimum - len(have))]:
+            p["device"], p["view_profile"] = device, prof
+            if p.get("network") in ("slow_3g", "patchy_4g") and device == "desktop_laptop":
+                p["network"] = "fast_wifi"
+            p["card"] = persona_card(p, market, "site")
 
 
 def pick_live(personas, keys, k):
@@ -279,7 +304,14 @@ def pick_live(personas, keys, k):
     def rarity(p):
         return sum(1 / counts[key][p[key]] for key in keys)
     counts = {key: Counter(p[key] for p in personas) for key in keys}
-    chosen = [max(personas, key=rarity)]
+    # One walker per screen type first (phone, tablet, laptop, desktop), then the most different personas.
+    chosen = []
+    for prof in ("mobile", "laptop", "tablet", "desktop"):
+        group = [p for p in personas if p.get("view_profile") == prof and p not in chosen]
+        if group and len(chosen) < k:
+            chosen.append(max(group, key=rarity))
+    if not chosen:
+        chosen = [max(personas, key=rarity)]
     while len(chosen) < min(k, len(personas)):
         def min_dist(p):
             return min(sum(p[key] != c[key] for key in keys) for c in chosen)
@@ -295,8 +327,10 @@ def main():
     ap.add_argument("--market", default="india")
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--batch-size", type=int, default=10)
-    ap.add_argument("--live", type=int, default=3, help="How many personas walk the live site in a real browser")
+    ap.add_argument("--live", type=int, default=4, help="How many personas walk the live site in a real browser")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--min-per-screen", type=int, default=10,
+                    help="Site mode: at least this many personas per screen type (tablet, laptop, desktop), converted from phone users")
     ap.add_argument("--overrides", help="JSON file with weight overrides")
     args = ap.parse_args()
 
@@ -322,6 +356,8 @@ def main():
     ensure_coverage(rng, personas, market, set())
     personas = [enrich(rng, i + 1, p, market, args.mode) for i, p in enumerate(personas)]
 
+    if args.mode == "site" and "device" in keys:
+        ensure_screens(rng, personas, market, args.min_per_screen)
     live = pick_live(personas, keys, args.live)
     live_ids = [p["id"] for p in live]
     for p in personas:
@@ -329,7 +365,7 @@ def main():
 
     # Panel batches share a device profile so a batch reviews one set of screenshots.
     batches = []
-    for profile in (("concept",) if args.mode == "concept" else ("mobile", "desktop")):
+    for profile in (("concept",) if args.mode == "concept" else ("mobile", "tablet", "laptop", "desktop")):
         group = [p["id"] for p in personas if p["mode"] == "panel" and (args.mode == "concept" or p["view_profile"] == profile)]
         for j in range(0, len(group), args.batch_size):
             batches.append({"batch_id": f"b{len(batches) + 1:02d}", "profile": profile,

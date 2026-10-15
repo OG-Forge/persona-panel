@@ -1,0 +1,11 @@
+{
+  "name": "ux",
+  "description": "Usability and look: navigation, scrolling, how sections and cards fit the screen, interactions, readability and visual design. What is sold, prices and payment policies are out of scope; the flow of handing off to another site is in scope.",
+  "outcomes": ["smooth", "some_friction", "frustrating"],
+  "outcome_labels": {"smooth": "Smooth to use", "some_friction": "Some friction", "frustrating": "Frustrating"},
+  "scores": ["navigation", "layout_fit", "readability", "interaction", "visual_appeal", "overall"],
+  "score_labels": {"navigation": "Navigation", "layout_fit": "Fits my screen", "readability": "Readability",
+                   "interaction": "Interactions", "visual_appeal": "Visual appeal", "overall": "Overall"},
+  "categories": ["navigation", "scrolling", "layout_fit", "interaction", "readability", "typography", "color", "hierarchy",
+                 "imagery", "consistency", "clutter", "mobile", "accessibility", "performance", "handoff", "other"]
+}

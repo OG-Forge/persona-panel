@@ -5,9 +5,13 @@ Reads personas.json, aggregate.json, synthesis.json and results/*.json and
 writes RUN_DIR/report.html.
 """
 import argparse
+import base64
 import html
+import io
 import json
 from pathlib import Path
+
+from PIL import Image
 
 SEG_LABELS = {
     "age_band": "Age", "location_tier": "City tier", "region": "Region", "income": "Income", "device": "Device",
@@ -62,6 +66,53 @@ def bar(pct, cls=""):
     return f'<span class="bar {cls}"><span style="width:{max(0, min(100, pct or 0))}%"></span></span>'
 
 
+_IMG_CACHE = {}
+
+
+def img_uri(path, max_w=960):
+    """Embed a screenshot (downscaled JPEG) so the report stays one shareable file."""
+    if path in _IMG_CACHE:
+        return _IMG_CACHE[path]
+    try:
+        img = Image.open(path).convert("RGB")
+    except (OSError, ValueError):
+        return None
+    if img.width > max_w:
+        img = img.resize((max_w, round(img.height * max_w / img.width)))
+    if img.height > 1800:
+        img = img.crop((0, 0, img.width, 1800))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=66)
+    _IMG_CACHE[path] = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    return _IMG_CACHE[path]
+
+
+def shots_html(paths_with_captions):
+    figs = []
+    for path, cap in paths_with_captions[:3]:
+        uri = img_uri(path)
+        if uri:
+            figs.append(f'<figure><img src="{uri}" alt="{e(cap)}"><figcaption>{e(cap)}</figcaption></figure>')
+    return f'<div class="shots">{"".join(figs)}</div>' if figs else ""
+
+
+def caption_for(path):
+    p = Path(path)
+    if p.parent.name == "probes":
+        return "measured: " + p.stem.split("-", 1)[-1].replace("-", " ")[:70]
+    if "walk" in p.parts:
+        return f"live walk {p.parent.name}, {p.stem.replace('_', ' ')}"
+    return f"{p.parent.parent.name} · {p.parent.name} · {p.stem.replace('_', ' ')}"
+
+
+def bug_text(title, severity, devices, pages, body, fix, paths):
+    lines = [f"[{severity}] {title}", "", f"Devices: {', '.join(devices) or 'all'}"]
+    if pages:
+        lines.append(f"Pages: {', '.join(pages)}")
+    lines += ["", body, "", f"Suggested fix: {fix}" if fix else "", "", "Screenshots:"] + [f"- {p}" for p in paths]
+    return "\n".join(l for l in lines if l is not None)
+
+
 def render(run, title, subject):
     personas = {p["id"]: p for p in json.loads((run / "personas.json").read_text(encoding="utf-8"))}
     agg = json.loads((run / "aggregate.json").read_text(encoding="utf-8"))
@@ -82,6 +133,19 @@ def render(run, title, subject):
     themes = sorted(syn.get("themes", []), key=lambda t: (-int(t.get("impact", 0)), SEV_ORDER.get(t.get("severity"), 9),
                                                           -len(t.get("persona_ids", []))))
     quick = set(syn.get("quick_wins", []))
+    shot_map = agg.get("shots", {})
+    probes_file = run / "probes" / "probes.json"
+    probe_findings = {f["id"]: f for f in json.loads(probes_file.read_text(encoding="utf-8"))["findings"]} if probes_file.exists() else {}
+    probe_groups = agg.get("probe_groups", [])
+    group_of = {fid: g for g in probe_groups for fid in g["finding_ids"]}
+
+    def resolve(ref):
+        """s12 -> its screenshot; u004 -> that measured check's annotated screenshots."""
+        if ref in shot_map:
+            return [shot_map[ref]]
+        if ref in probe_findings:
+            return probe_findings[ref]["shots"]
+        return [ref] if ref and Path(ref).exists() else []
 
     def theme_html(i, t):
         ids = [pid for pid in t.get("persona_ids", []) if pid in personas]
@@ -90,15 +154,46 @@ def render(run, title, subject):
             f'<li><q>{e(results[pid].get("quote", ""))}</q> <span class="muted">— {e(who(personas[pid]))}</span></li>'
             for pid in ids[:6] if pid in results and results[pid].get("quote"))
         qw = '<span class="chip qw">quick win</span>' if t.get("title") in quick else ""
+        paths = []
+        for ref in list(t.get("shots", [])) + list(t.get("probe_ids", [])):
+            for pth in resolve(ref):
+                if pth not in paths:
+                    paths.append(pth)
+        devices = t.get("devices", [])
+        probe_note = ""
+        for pid in t.get("probe_ids", []):
+            g = group_of.get(pid)
+            if g:
+                probe_note += (f'<p class="measured"><b>Measured ({e(pid)}):</b> {e(g["title"])}. '
+                               f'Seen on {e(", ".join(g["devices"]))}.</p>')
+        bug = bug_text(t.get("title"), t.get("severity"), devices, [t.get("where")] if t.get("where") else [],
+                       f"{t.get('evidence', '')}\nWho: {t.get('who', '')}\nReported by {len(ids)} of {n} personas.",
+                       t.get("fix"), paths[:3])
         return f"""
 <article class="theme sev-{e(t.get('severity'))}">
   <header><span class="rank">{i}</span><h3>{e(t.get('title'))}</h3>
-    <span class="chip sev">{e(t.get('severity'))}</span><span class="chip">effort: {e(t.get('effort'))}</span>{qw}</header>
+    <span class="chip sev">{e(t.get('severity'))}</span><span class="chip">effort: {e(t.get('effort'))}</span>{qw}
+    {''.join(f'<span class="chip dev">{e(d)}</span>' for d in devices)}
+    <button class="copy" data-bug="{e(bug)}">Copy as bug</button></header>
   <div class="reach">{bar(pct)}<span><b>{len(ids)}</b> of {n} personas ({pct}%) · {e(t.get('where'))}</span></div>
   <p><b>Who:</b> {e(t.get('who'))}</p>
   <p><b>Evidence:</b> {e(t.get('evidence'))}</p>
+  {probe_note}
+  {shots_html([(pth, caption_for(pth)) for pth in paths])}
   <p class="fix"><b>Fix:</b> {e(t.get('fix'))}</p>
   {f'<details><summary>What they said</summary><ul class="voices">{voices}</ul></details>' if voices else ''}
+</article>"""
+
+    def probe_group_html(g):
+        bug = bug_text(g["title"], g["severity"], g["devices"], g["pages"], g["detail"], "", g["shots"])
+        return f"""
+<article class="theme probe sev-{'high' if g['severity'] == 'major' else 'low'}">
+  <header><h3>{e(g['title'])}</h3><span class="chip sev">{e(g['severity'])}</span>
+    <span class="chip">{e(g['check'].replace('_', ' '))}</span><span class="chip">{e(', '.join(g['finding_ids'][:6]))}</span>
+    <button class="copy" data-bug="{e(bug)}">Copy as bug</button></header>
+  <p>{e(g['detail'])}</p>
+  <p class="muted">Devices: {e(', '.join(g['devices']))} · Pages: {e(', '.join(g['pages']))}</p>
+  {shots_html([(pth, caption_for(pth)) for pth in g['shots']])}
 </article>"""
 
     seg_html = []
@@ -183,13 +278,20 @@ details{{margin:6px 0}}summary{{cursor:pointer}}.seg{{background:var(--card);bor
 .persona{{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 12px}}.persona summary{{display:flex;gap:8px;align-items:center}}.pname{{font-size:14px}}
 .filters button{{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:20px;padding:3px 12px;margin-right:6px;cursor:pointer}}.filters button.on{{background:var(--ink);color:var(--bg)}}
 .voices{{padding-left:18px}}q{{font-style:italic}}
-@media (max-width:600px){{.leftat li{{grid-template-columns:110px 1fr 32px}}.bar{{width:70px}}h1{{font-size:23px}}}}
+.shots{{display:flex;gap:10px;overflow-x:auto;margin:10px 0;padding-bottom:4px}}.shots figure{{margin:0;flex:0 0 auto;max-width:300px}}
+.shots img{{display:block;max-width:300px;max-height:260px;border:1px solid var(--line);border-radius:6px;cursor:zoom-in;object-fit:cover;object-position:top}}
+.shots figcaption{{font-size:12px;color:var(--muted);margin-top:3px}}.measured{{border-left:3px solid var(--accent);padding-left:8px}}
+.chip.dev{{background:transparent;border:1px solid var(--line)}}.theme p,.theme li,.walker li{{overflow-wrap:anywhere}}
+.copy{{margin-left:auto;font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:6px;padding:3px 10px;cursor:pointer}}.copy.done{{background:var(--pos);color:#fff}}
+dialog.zoom{{border:0;padding:0;background:transparent;max-width:96vw;max-height:94vh}}dialog.zoom::backdrop{{background:rgba(0,0,0,.8)}}dialog.zoom img{{max-width:96vw;max-height:94vh;display:block}}
+@media (max-width:600px){{.leftat li{{grid-template-columns:110px 1fr 32px}}.bar{{width:70px}}h1{{font-size:23px}}.shots img{{max-width:240px}}}}
 </style></head><body><main>
 <p class="muted">Persona panel · {e(mode)} review{f" · {e(lens.get('name'))} lens" if lens else ""} · {e(agg.get('market'))} market · {n} simulated customers{f" ({agg['n_live']} walked the live site)" if agg.get('n_live') else ''}</p>
 <h1>{e(title)}</h1><p class="muted">{e(subject)}</p>
 <p class="headline">{e(syn.get('headline', ''))}</p><ul>{summary}</ul>
 <div class="tiles">{tiles}</div>{stack}<p class="muted">green = {e(outs[0])} · amber = {e(outs[1])} · red = {e(outs[2])}</p>
 <h2>What to fix, in order</h2>{''.join(theme_html(i + 1, t) for i, t in enumerate(themes)) or '<p class=muted>No synthesis yet.</p>'}
+{f'<h2>Measured UX checks</h2><p class="muted">A real browser scrolled, clicked and pressed Back on phone, tablet, laptop and desktop sizes. Blue outlines mark the element; the red dashed line marks where the screen ends.</p>{"".join(probe_group_html(g) for g in probe_groups)}' if probe_groups else ''}
 {f'<h2>How segments differed</h2><ul>{insights}</ul>' if insights else ''}
 <h2>Segment breakdown</h2>{''.join(seg_html)}
 {f'<h2>Where people gave up</h2><ul class="leftat">{left_html}</ul>' if left_html else ''}
@@ -204,6 +306,10 @@ details{{margin:6px 0}}summary{{cursor:pointer}}.seg{{background:var(--card);bor
 </main><script>
 document.querySelectorAll('.filters button').forEach(b=>b.onclick=()=>{{document.querySelectorAll('.filters button').forEach(x=>x.classList.toggle('on',x===b));
 document.querySelectorAll('#gallery .persona').forEach(p=>p.style.display=(b.dataset.f==='all'||p.dataset.outcome===b.dataset.f)?'':'none')}});
+const dlg=document.createElement('dialog');dlg.className='zoom';dlg.innerHTML='<img alt="">';document.body.append(dlg);
+dlg.onclick=()=>dlg.close();
+document.querySelectorAll('.shots img').forEach(i=>i.onclick=()=>{{dlg.querySelector('img').src=i.src;dlg.showModal()}});
+document.querySelectorAll('.copy').forEach(b=>b.onclick=async()=>{{try{{await navigator.clipboard.writeText(b.dataset.bug);b.textContent='Copied';b.classList.add('done')}}catch(err){{prompt('Copy this bug:',b.dataset.bug)}}}});
 </script></body></html>"""
 
 

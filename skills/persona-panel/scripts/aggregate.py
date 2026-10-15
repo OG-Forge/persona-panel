@@ -28,13 +28,31 @@ def load_results(run):
         except json.JSONDecodeError as e:
             problems.append(f"{f.name}: invalid JSON ({e})")
             continue
+        images_file = run / "briefs" / f"{f.stem}_images.json"
+        images = json.loads(images_file.read_text(encoding="utf-8")) if images_file.exists() else {}
         for r in data if isinstance(data, list) else [data]:
             if not isinstance(r, dict) or "id" not in r:
                 problems.append(f"{f.name}: entry without id")
                 continue
             r["_source"] = "live" if f.name.startswith("live_") else "panel"
+            for i in r.get("issues") or []:
+                if isinstance(i, dict):
+                    i["shot"] = resolve_shot(i.get("shot"), images)
             results[r["id"]] = r
     return results, problems
+
+
+def resolve_shot(shot, images):
+    """An issue's screenshot: a brief image id (i03), a measured-check id (u004) or a walker's step path."""
+    if not shot or not isinstance(shot, str):
+        return None
+    shot = shot.strip()
+    m = re.fullmatch(r"\[?(i\d+)\]?", shot)
+    if m:
+        return images.get(m.group(1))
+    if re.fullmatch(r"u\d{3}", shot):
+        return shot
+    return shot if Path(shot).exists() else None
 
 
 def norm_where(w):
@@ -53,6 +71,25 @@ def clean(r):
         i["category"] = (i.get("category") or "other").lower()
         i["where"] = norm_where(i.get("where"))
     return r
+
+
+def group_probes(findings):
+    """One entry per problem: the same section too tall on 4 devices and 3 pages is one group."""
+    groups = {}
+    for f in findings:
+        g = groups.setdefault(f.get("group", f["id"]), {"id": f["id"], "check": f["check"], "severity": f["severity"],
+                                                        "title": f["title"], "detail": f["detail"], "devices": [],
+                                                        "pages": [], "finding_ids": [], "shots": []})
+        if f["device"] not in g["devices"]:
+            g["devices"].append(f["device"])
+        if f["page"] not in g["pages"]:
+            g["pages"].append(f["page"])
+        g["finding_ids"].append(f["id"])
+        if len(g["shots"]) < 2:
+            g["shots"] += f["shots"][:2 - len(g["shots"])]
+        if SEV_WEIGHT.get(f["severity"], 0) > SEV_WEIGHT.get(g["severity"], 0):
+            g["severity"] = f["severity"]
+    return sorted(groups.values(), key=lambda g: (-SEV_WEIGHT.get(g["severity"], 0), -len(g["devices"]) * len(g["pages"])))
 
 
 def avg(xs):
@@ -109,10 +146,22 @@ def main():
         if len(groups) > 1:
             segments[key] = {v: summarize(g) for v, g in sorted(groups.items(), key=lambda kv: -len(kv[1]))}
 
+    # Screenshots get short ids (s1, s2...) so the synthesizer can attach them to themes; measured checks keep u### ids.
+    shots = {}
+    def shot_id(path):
+        if not path or path.startswith("u"):
+            return path
+        if path not in shots.values():
+            shots[f"s{len(shots) + 1}"] = path
+        return next(k for k, v in shots.items() if v == path)
+
     issues = []
     for r in rows:
         for i in r["issues"]:
-            issues.append({"pid": r["id"], **{k: i.get(k, "") for k in ("where", "category", "severity", "what", "fix")}})
+            issues.append({"pid": r["id"], **{k: i.get(k, "") for k in ("where", "category", "severity", "what", "fix")},
+                           "shot": shot_id(i.get("shot")), "profile": personas[r["id"]].get("view_profile", "")})
+    probes_path = run / "probes" / "probes.json"
+    probe_groups = group_probes(json.loads(probes_path.read_text(encoding="utf-8"))["findings"]) if probes_path.exists() else []
     buckets = defaultdict(list)
     for i in issues:
         buckets[(i["where"], i["category"])].append(i)
@@ -125,6 +174,7 @@ def main():
         "overall": overall, "segments": segments, "issue_count": len(issues),
         "buckets": [{"where": w, "category": c, "count": len(v), "weight": sum(SEV_WEIGHT[i["severity"]] for i in v)}
                     for (w, c), v in bucket_rank],
+        "shots": shots, "probe_groups": probe_groups,
     }
     (run / "aggregate.json").write_text(json.dumps(agg, indent=1, ensure_ascii=False), encoding="utf-8")
 
@@ -132,10 +182,16 @@ def main():
     lines = [f"# Issue digest: {len(issues)} issues from {len(rows)} personas",
              f"Overall: {OUTCOMES[0]} {overall['buy_pct']}% / {OUTCOMES[1]} {overall['maybe_pct']}% / {OUTCOMES[2]} {overall['no_pct']}%; "
              f"avg scores {overall['scores']}; understood offer {overall['understood_offer_pct']}%; left at {overall['left_at']}",
-             "Line format: pid|severity|what => fix", ""]
+             "Line format: pid|screen|severity|what => fix [screenshot id]", ""]
+    if probe_groups:
+        lines.append(f"## MEASURED UX CHECKS (real browser, facts; {len(probe_groups)} problem groups)")
+        lines += [f"{g['id']}|{g['severity']}|{', '.join(g['devices'])}|pages: {', '.join(g['pages'])}| {g['title']}. {g['detail']}"
+                  for g in probe_groups]
+        lines.append("")
     for (w, c), items in bucket_rank:
         lines.append(f"## {w} / {c} ({len(items)})")
-        lines += [f"{i['pid']}|{i['severity']}|{i['what']} => {i['fix']}" for i in items]
+        lines += [f"{i['pid']}|{i['profile']}|{i['severity']}|{i['what']} => {i['fix']}" + (f" [{i['shot']}]" if i['shot'] else "")
+                  for i in items]
         lines.append("")
     lines.append("## What personas liked")
     liked = Counter(l.strip().lower() for r in rows for l in (r.get("liked") or []) if isinstance(l, str))

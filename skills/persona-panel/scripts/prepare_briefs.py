@@ -96,6 +96,27 @@ def profile_digest(digest, profile):
     return head + "".join("\n### " + b for b in rest if f"({profile})" in b.split("\n", 1)[0])
 
 
+PROBE_PROFILES = {"mobile": ("mobile", "mobile_large"), "tablet": ("tablet",), "laptop": ("laptop", "laptop_hd"),
+                  "desktop": ("desktop",), "desktop_legacy": ("laptop", "desktop")}
+
+
+def probe_facts(run, profile):
+    """Measured UX checks that apply to this screen type, one line per problem group."""
+    path = run / "probes" / "probes.json"
+    if not path.exists():
+        return ""
+    findings = json.loads(path.read_text(encoding="utf-8"))["findings"]
+    mine, seen = [], set()
+    for f in findings:
+        if f["profile"] in PROBE_PROFILES.get(profile, (profile,)) and f["group"] not in seen:
+            seen.add(f["group"])
+            mine.append(f"- [{f['id']}] ({f['severity']}, {f['device']}, page {f['page']}) {f['title']}. {f['detail']}")
+    if not mine:
+        return ""
+    header = "## Measured UX checks on this screen type (a real browser clicked, scrolled and pressed Back; these are facts)"
+    return "\n".join([header, *mine[:25], ""])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
@@ -150,8 +171,12 @@ def main():
             parts += ["## The concept being evaluated", concept]
         else:
             imgs = core_images(manifest, b["profile"], run, args.max_images)
+            ids = {f"i{n + 1:02d}": path for n, path in enumerate(imgs)}
+            (run / "briefs" / f"{b['batch_id']}_images.json").write_text(json.dumps(ids, indent=1), encoding="utf-8")
             parts += [f"## Screenshots to open ({b['profile']} view) — Read ALL of these in ONE turn (parallel Read calls)",
-                      *[f"- {i}" for i in imgs], "",
+                      "In an issue's `shot`, use the short id in brackets (e.g. i03), not the path.",
+                      *[f"- [{k}] {Path(v).parent.parent.name}/{Path(v).stem}: {v}" for k, v in ids.items()], "",
+                      probe_facts(run, b["profile"]),
                       "## Site digest (measured facts from the capture; trust these over guesses)",
                       profile_digest(digest, b["profile"])]
         parts += ["## Your personas", *cards, "", "## Output", f"Write ONE file: `{out}`" + (" (format: see Output schema above)" if not schema else ""), schema]
