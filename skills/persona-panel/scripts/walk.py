@@ -16,11 +16,13 @@ Usage (SESSION is a directory, one per walker):
 """
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
@@ -99,10 +101,37 @@ def load_state(session):
     return json.loads(p.read_text())
 
 
+def site_host(url):
+    host = urlparse(url).netloc.lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def on_site(url, state):
+    """The walker may only be on the site under test (or blank pages)."""
+    return not state.get("site") or url.startswith(("about:", "data:")) or site_host(url) == state["site"]
+
+
+def guard(page, state, blocked):
+    """Enforce the walker safety rules in code, not just in the prompt: block top-level navigation to other sites."""
+    def handle(route):
+        req = route.request
+        if req.is_navigation_request() and req.frame == page.main_frame and not on_site(req.url, state):
+            blocked.append(req.url)
+            route.abort()
+        else:
+            route.continue_()
+    page.route("**/*", handle)
+
+
 def connect(pw, state):
     browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{state['port']}")
     ctx = browser.contexts[0]
-    page = ctx.pages[-1] if ctx.pages else ctx.new_page()
+    # Close any tab that wandered off-site (e.g. a target=_blank marketplace link) and stay on the site.
+    for extra in ctx.pages:
+        if not on_site(extra.url, state) and len(ctx.pages) > 1:
+            extra.close()
+    on = [p for p in ctx.pages if on_site(p.url, state)]
+    page = on[-1] if on else (ctx.pages[-1] if ctx.pages else ctx.new_page())
     # Viewport emulation lives on the CDP connection, so re-apply it every time.
     w, h = DEVICES[state['device']]['size']
     page.set_viewport_size({'width': w, 'height': h})
@@ -174,7 +203,7 @@ def start(session, url, device):
     if os.name == "nt":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
-    state = {"port": port, "pid": proc.pid, "device": device, "step": 0}
+    state = {"port": port, "pid": proc.pid, "device": device, "step": 0, "site": site_host(url)}
     state_path(session).write_text(json.dumps(state))
     for _ in range(50):
         try:
@@ -210,6 +239,8 @@ def act(session, cmd, rest):
     state = load_state(session)
     with sync_playwright() as pw:
         _, page = connect(pw, state)
+        blocked = []
+        guard(page, state, blocked)
         try:
             if cmd == "look":
                 pass
@@ -219,6 +250,9 @@ def act(session, cmd, rest):
                 page.get_by_text(rest[0], exact=False).first.click(timeout=8000)
             elif cmd == "type":
                 loc = locate(page, rest[0])
+                kind = loc.evaluate("e => [e.type || '', e.name || '', e.autocomplete || '', e.id || '', e.placeholder || ''].join(' ').toLowerCase()")
+                if re.search(r"password|e-?mail|\btel\b|phone|mobile|cc-|card|cvv|otp|address|\bname\b", kind):
+                    raise RuntimeError(f"refused: walkers may not type into personal-data fields ({kind.strip()[:60]})")
                 loc.fill(rest[1], timeout=8000)
             elif cmd == "select":
                 locate(page, rest[0]).select_option(label=rest[1], timeout=8000)
@@ -230,6 +264,8 @@ def act(session, cmd, rest):
             elif cmd == "back":
                 page.go_back(wait_until="domcontentloaded", timeout=30000)
             elif cmd == "goto":
+                if not on_site(rest[0], state):
+                    raise RuntimeError(f"refused: {rest[0]} is not on the site under test")
                 page.goto(rest[0], wait_until="domcontentloaded", timeout=60000)
             else:
                 sys.exit(f"Unknown command: {cmd}")
@@ -240,8 +276,15 @@ def act(session, cmd, rest):
         except Exception:
             pass
         page.wait_for_timeout(1200)
-        # The click may have opened a new tab; follow it.
-        page = page.context.pages[-1]
+        # The click may have opened a new tab: follow it if it's on the site, close it if it isn't.
+        for p in page.context.pages:
+            if p != page and not on_site(p.url, state):
+                blocked.append(p.url)
+                p.close()
+        on = [p for p in page.context.pages if on_site(p.url, state)]
+        page = on[-1] if on else page
+        for url in dict.fromkeys(blocked):
+            print(f"BLOCKED: leaving the site is not allowed ({url[:100]}). You are still on the site.")
         look(page, session, state)
 
 

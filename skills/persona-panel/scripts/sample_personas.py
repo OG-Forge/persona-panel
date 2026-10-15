@@ -259,14 +259,19 @@ def persona_card(p, market, mode="site"):
     place = p["city"] + (f" ({p['location_tier'].replace('_', ' ')})" if "location_tier" in p else "")
     income = f" {p['income'].replace('_', ' ').capitalize()} income." if "income" in p else ""
     lines = [f"{p['name']}, {p['age']}, {gender_label}, {p['occupation']} in {place}.{income}"]
-    if "intent" in p:
-        intent = phrase(market, "intent", p["intent"]).rstrip(".")
-        if mode == "concept" or "device" not in p:
-            lines.append(f"Mindset: {intent}.")
-        else:
-            lines += [f"Browsing on {phrase(market, 'device', p['device']).rstrip('.')} over "
-                      f"{phrase(market, 'network', p['network']).rstrip('.')}, {phrase(market, 'context', p['context']).rstrip('.')}.",
-                      f"{pronoun} {TRAFFIC_PHRASE.get(p.get('traffic_source'), 'arrived')} and is {intent}."]
+    # Device/network/context and arrival are written independently: custom markets may omit any of them.
+    if mode == "site" and "device" in p:
+        how = f"Browsing on {phrase(market, 'device', p['device']).rstrip('.')}"
+        if "network" in p:
+            how += f" over {phrase(market, 'network', p['network']).rstrip('.')}"
+        if "context" in p:
+            how += f", {phrase(market, 'context', p['context']).rstrip('.')}"
+        lines.append(how + ".")
+    intent = phrase(market, "intent", p["intent"]).rstrip(".") if "intent" in p else ""
+    if mode == "site" and "traffic_source" in p:
+        lines.append(f"{pronoun} {TRAFFIC_PHRASE.get(p['traffic_source'], 'arrived')}" + (f" and is {intent}." if intent else "."))
+    elif intent:
+        lines.append(f"Mindset: {intent}.")
     if "aesthetic_taste" in p:
         lines.append(f"Likes {phrase(market, 'aesthetic_taste', p['aesthetic_taste']).rstrip('.')}.")
     # Every other sampled attribute, in market order (this is what makes custom markets work).
@@ -285,15 +290,24 @@ def persona_card(p, market, mode="site"):
 
 
 def ensure_screens(rng, personas, market, minimum):
-    """Guarantee enough tablet/laptop/desktop reviewers; phone-heavy markets would otherwise leave PC layouts untested."""
+    """Guarantee enough tablet/laptop/desktop reviewers; phone-heavy markets would otherwise leave PC layouts untested.
+
+    Capped at 10% of the panel per screen type, so small panels keep most of their phone users."""
+    per_screen = min(minimum, max(1, len(personas) // 10))
     for prof, device in (("tablet", "tablet"), ("laptop", "desktop_laptop"), ("desktop", "desktop_laptop")):
         have = [p for p in personas if p["view_profile"] == prof]
-        donors = [p for p in personas if p["view_profile"] == "mobile"]
+        # Prefer donors whose rare values won't vanish: skip personas holding the only copy of a value.
+        counts = {k: Counter(p.get(k) for p in personas) for k in ("network", "context", "accessibility_need")}
+        donors = [p for p in personas if p["view_profile"] == "mobile"
+                  and all(counts[k][p.get(k)] > 1 for k in counts if k in p)]
         rng.shuffle(donors)
-        for p in donors[:max(0, minimum - len(have))]:
+        for p in donors[:max(0, per_screen - len(have))]:
             p["device"], p["view_profile"] = device, prof
-            if p.get("network") in ("slow_3g", "patchy_4g") and device == "desktop_laptop":
-                p["network"] = "fast_wifi"
+            if device == "desktop_laptop":
+                if p.get("network") in ("slow_3g", "patchy_4g"):
+                    p["network"] = "fast_wifi"
+                if p.get("context") == "on_commute":
+                    p["context"] = "relaxed_at_home"
             p["card"] = persona_card(p, market, "site")
 
 
@@ -374,7 +388,7 @@ def main():
     run = Path(args.run)
     run.mkdir(parents=True, exist_ok=True)
     (run / "personas.json").write_text(json.dumps(personas, indent=1, ensure_ascii=False), encoding="utf-8")
-    (run / "batches.json").write_text(json.dumps({"market": market["name"], "mode": args.mode, "panel": batches, "live": live_ids},
+    (run / "batches.json").write_text(json.dumps({"market": market["name"], "mode": args.mode, "attributes": keys, "panel": batches, "live": live_ids},
                                                  indent=1), encoding="utf-8")
 
     lines = [f"# Panel: {len(personas)} personas ({market['name']} market, seed {args.seed})", ""]

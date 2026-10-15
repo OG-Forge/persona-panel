@@ -109,4 +109,4 @@ Clean up any leftover walker browsers: `PY SKILL_DIR/scripts/walk.py RUN/walk/<p
 - These are simulated customers. They're good at finding friction, confusion and missing information, but they don't measure real conversion. Say so once in the summary.
 - Measured checks are facts; persona reactions are opinions. Keep that distinction in the summary.
 - Never pad the results. If a batch failed twice, report fewer personas rather than inventing them.
-- Live walkers never pay, sign up, log in, follow links to other sites, or enter real personal data (enforced in their brief). Don't relax that.
+- Live walkers never pay, sign up, log in, follow links to other sites, or enter real personal data. Their brief says so, and `walk.py` enforces it: navigation to other sites is blocked, off-site tabs are closed, and typing into password, email, phone, address, name or card fields is refused. Don't relax that.

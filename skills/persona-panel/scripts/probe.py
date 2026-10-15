@@ -66,8 +66,9 @@ SECTIONS_JS = r"""
   return { fixedTop, vh, vw, sections: c.slice(0, 20).map((el, i) => {
     const r = el.getBoundingClientRect();
     const h = el.querySelector('h1, h2, h3');
-    let sticky = false;
-    for (const d of el.querySelectorAll('*')) { if (getComputedStyle(d).position === 'sticky') { sticky = true; break; } }
+    // Height of the tallest pinned (sticky) element inside: a big one means a scroll-driven section.
+    let sticky = 0;
+    for (const d of el.querySelectorAll('*')) { if (getComputedStyle(d).position === 'sticky') sticky = Math.max(sticky, d.getBoundingClientRect().height); }
     el.setAttribute('data-pp-sec', i);
     // Largest repeated card inside the section (siblings sharing a class, each at least 140x140).
     let card = 0, cardName = '', cardTop = 0, n = 0;
@@ -170,15 +171,26 @@ STICKY_JS = r"""
   for (const el of document.querySelectorAll('body *')) {
     const s = getComputedStyle(el); if (s.position !== 'fixed' && s.position !== 'sticky') continue;
     const r = el.getBoundingClientRect();
-    if (r.width < 40 || r.height < 20 || r.bottom <= 0 || r.top >= vh || s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
+    if (r.width < 40 || r.height < 20 || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+    if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
     if (r.height > vh * 0.4) continue;   // a pinned scroll stage is content, not an overlay
+    // A sticky element only overlays content while it is stuck at its offset (e.g. top: 66px under a header).
+    if (s.position === 'sticky') {
+      const top = parseFloat(s.top), bottom = parseFloat(s.bottom);
+      const stuck = (!isNaN(top) && Math.abs(r.top - top) <= 2) || (!isNaN(bottom) && Math.abs(vh - r.bottom - bottom) <= 2);
+      if (!stuck) continue;
+    }
     if (bars.some(b => b.el.contains(el))) continue;
-    bars.push({ el, area: Math.min(r.width, vw) * Math.min(r.bottom, vh) - Math.max(r.top, 0) * 0, h: Math.round(r.height), w: Math.round(r.width),
+    bars.push({ el, r, h: Math.round(r.height), w: Math.round(Math.min(r.right, vw) - Math.max(r.left, 0)),
                 name: (el.getAttribute('aria-label') || el.id || el.tagName.toLowerCase() + '.' + el.className.toString().split(' ')[0]).slice(0, 40) });
   }
   bars.forEach((b, i) => b.el.setAttribute('data-pp-sticky', i));
-  const covered = bars.reduce((s, b) => s + b.w * b.h, 0) / (vw * vh);
-  return { covered_pct: Math.round(covered * 100), bars: bars.map(b => ({ name: b.name, h: b.h, w: b.w })) };
+  // Covered share of the screen, sampled on a grid so overlapping bars aren't counted twice.
+  let hit = 0, total = 0;
+  for (let y = 4; y < vh; y += 8) for (let x = 4; x < vw; x += 8) {
+    total++; if (bars.some(b => x >= b.r.left && x <= b.r.right && y >= b.r.top && y <= b.r.bottom)) hit++;
+  }
+  return { covered_pct: Math.round(100 * hit / Math.max(total, 1)), bars: bars.map(b => ({ name: b.name, h: b.h, w: b.w })) };
 }
 """
 
@@ -224,7 +236,9 @@ class Prober:
         self.findings, self.summary = [], []
 
     def shot_path(self, name):
-        return self.out / f"{len(self.findings) + 1:03d}-{re.sub(r'[^a-z0-9]+', '-', name.lower())[:60]}.jpg"
+        # Numbered when the path is created (not from len(findings)), so checks running at the same time never collide.
+        self.shots_taken = getattr(self, "shots_taken", 0) + 1
+        return self.out / f"{self.shots_taken:03d}-{re.sub(r'[^a-z0-9]+', '-', name.lower())[:60]}.jpg"
 
     def add(self, check, page, profile, severity, title, detail, shots, measured=None):
         # Same problem on several devices/pages -> one group in the report.
@@ -277,7 +291,8 @@ class Prober:
         for s in info["sections"]:
             ratio = s["height"] / avail
             rows.append({**s, "ratio": round(ratio, 2)})
-            if s["sticky_inside"] and s["height"] > 1.6 * vh:
+            # Pinned "scrollytelling": tall section with a big sticky stage. On phones a small sticky bar (add-to-cart) doesn't count.
+            if s["sticky_inside"] >= (0.6 * vh if is_phone else 120) and s["height"] > 1.6 * vh:
                 await self._section_shot_and_add(pg, page_info, profile, s, avail, top_bar, "scroll_driven", "minor",
                     f"Scroll-driven section '{s['heading']}' is {s['height'] / vh:.1f} screens tall",
                     "It pins content and plays out as you scroll. Anyone who jumps into it (a button or anchor) or scrolls fast lands mid-sequence with no cue.")
@@ -359,7 +374,7 @@ class Prober:
         h = await pg.evaluate(HERO_JS)
         if h["cta_top"] is not None and h["cta_top"] > h["vh"] - 40:
             await pg.evaluate(MARK_JS, ['[data-pp-hero="1"]', f"Main button '{h['cta_text']}' is below the first screen", "#e0245e"])
-            path = self.shot_path(f"hero-{profile}")
+            path = self.shot_path(f"hero-{profile}-{page_info['slug']}")
             await pg.screenshot(path=str(path), type="jpeg", quality=70, full_page=True,
                                 clip={"x": 0, "y": 0, "width": PROFILES[profile]["viewport"]["width"], "height": min(h["cta_top"] + 120, h["vh"] * 2)})
             await pg.evaluate(UNMARK_JS)
@@ -391,9 +406,12 @@ class Prober:
             except Exception:
                 continue
             await pg.wait_for_timeout(1800)
-            if urlparse(pg.url).path != urlparse(before_url).path:
+            if same_path(pg.url, before_url) is False:
                 await pg.go_back()
                 await pg.wait_for_timeout(1200)
+                # A reload on Back wipes our data-pp-* markers; put them back so the remaining buttons still get tested.
+                sections = await pg.evaluate(SECTIONS_JS)
+                await pg.evaluate(CTA_JS)
                 continue
             after_y = await pg.evaluate("scrollY")
             if abs(after_y - before_y) < 50:
@@ -408,7 +426,7 @@ class Prober:
                               .reduce((n, e) => n + (e.innerText || '').trim().length, 0) } : null; }""", sections["fixedTop"])
             label = f"After clicking '{c['text']}' ({PROFILES[profile]['label']})"
             await pg.evaluate(MARK_JS, ["body > .pp-none", label, "#2f5bea"])
-            path = self.shot_path(f"jump-{profile}-{c['text']}")
+            path = self.shot_path(f"jump-{profile}-{page_info['slug']}-{c['text']}")
             await pg.screenshot(path=str(path), type="jpeg", quality=70)
             await pg.evaluate(UNMARK_JS)
             if not land:
@@ -440,21 +458,29 @@ class Prober:
                 await pg.wait_for_timeout(700)
                 y0 = await pg.evaluate("scrollY")
                 await pg.evaluate(MARK_JS, [f'[data-pp-link="{ln["idx"]}"]', f"1. Scrolled here and clicked '{ln['text']}'", "#2f5bea"])
-                before = self.shot_path(f"back-before-{profile}-{ln['text']}")
+                before = self.shot_path(f"back-before-{profile}-{page_info['slug']}-{ln['text']}")
                 await pg.screenshot(path=str(before), type="jpeg", quality=70)
                 await pg.evaluate(UNMARK_JS)
-                await el.click(timeout=4000)
-                await pg.wait_for_url(lambda u: urlparse(u).path == ln["path"], timeout=10000)
+                start_url = pg.url
+                try:
+                    await el.click(timeout=4000)
+                except PWTimeout:
+                    # Something (a decorative overlay, a sticker) intercepts the pointer; a user's tap still reaches the link.
+                    await el.evaluate("e => e.click()")
+                # Any navigation away counts (servers may add a trailing slash or redirect).
+                await pg.wait_for_url(lambda u: same_path(u, start_url) is False, timeout=10000)
                 await pg.wait_for_timeout(1200)
                 await pg.go_back(wait_until="load", timeout=20000)
-            except Exception:
+            except Exception as e:
+                print(f"  ! back check skipped for '{ln['text']}' ({profile}): {str(e).splitlines()[0][:100]}", flush=True)
                 continue
             await pg.wait_for_timeout(2500)
             y1 = await pg.evaluate("scrollY")
+            await pg.evaluate(LINKS_MID_JS)   # restore markers in case Back reloaded the page
             vh = PROFILES[profile]["viewport"]["height"]
             if abs(y1 - y0) > max(150, 0.25 * vh):
                 await pg.evaluate(MARK_JS, ["body > .pp-none", f"2. After pressing Back: scrolled to {y1}px instead of {y0}px", "#e0245e"])
-                after = self.shot_path(f"back-after-{profile}-{ln['text']}")
+                after = self.shot_path(f"back-after-{profile}-{page_info['slug']}-{ln['text']}")
                 await pg.screenshot(path=str(after), type="jpeg", quality=70)
                 await pg.evaluate(UNMARK_JS)
                 self.add("back_restore", page_info, profile, "major",
@@ -462,6 +488,11 @@ class Prober:
                          f"You were {y0}px down the page; Back put you at {y1}px ({'top of the page' if y1 < 50 else 'a different spot'}). "
                          "People lose their place every time they peek at a category.", [before, after],
                          {"scroll_before": y0, "scroll_after_back": y1, "link": ln["path"]})
+
+
+def same_path(a, b):
+    """True if two URLs are the same page (ignoring a trailing slash and the #hash)."""
+    return urlparse(a).path.rstrip("/") == urlparse(b).path.rstrip("/")
 
 
 def write_digest(run, findings, summary):

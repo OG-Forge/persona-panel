@@ -133,14 +133,20 @@ def classify(url):
     return "other"
 
 
+def site_host(url):
+    """Host with 'www.' dropped, so shop.com and www.shop.com count as one site."""
+    host = urlparse(url).netloc.lower()
+    return host[4:] if host.startswith("www.") else host
+
+
 def pick_pages(start, links, max_pages, extra):
-    origin = urlparse(start).netloc.lower()
+    origin = site_host(start)
     chosen = [norm(start)] + [norm(u) for u in extra]
     seen = set(chosen)
     buckets = {}
     for link in links:
         u = urlparse(link["href"])
-        if u.scheme not in ("http", "https") or u.netloc.lower() != origin:
+        if u.scheme not in ("http", "https") or site_host(link["href"]) != origin:
             continue
         if re.search(r"\.(jpg|jpeg|png|webp|gif|pdf|zip|xml)$|/account|/login|/signin|/checkout|logout|/search\?", u.path.lower()):
             continue
@@ -247,15 +253,16 @@ async def throttled_load(browser, url, profile):
 
 
 async def discover_links(browser, url, profile):
+    """Links on the page, plus the page's final URL after any redirects."""
     ctx = await browser.new_context(**context_options(profile))
     page = await ctx.new_page()
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
         await page.wait_for_timeout(2500)
-        return await page.evaluate(LINKS_JS)
+        return await page.evaluate(LINKS_JS), page.url
     except Exception as e:
         print(f"  ! link discovery failed for {url} ({profile}): {e}", flush=True)
-        return []
+        return [], None
     finally:
         await ctx.close()
 
@@ -332,21 +339,22 @@ async def run_capture(args):
     cap.mkdir(parents=True, exist_ok=True)
     profiles = [p.strip() for p in args.profiles.split(",") if p.strip()]
     manifest = {"start_url": args.url, "captured_at": time.strftime("%Y-%m-%d %H:%M"), "profiles": profiles, "pages": []}
-    origin = urlparse(args.url).netloc.lower()
-
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()
         print(f"Discovering pages from {args.url} ...", flush=True)
-        desktop_links, mobile_links = await asyncio.gather(discover_links(browser, args.url, "desktop"),
-                                                           discover_links(browser, args.url, "mobile"))
-        pages = pick_pages(args.url, desktop_links + mobile_links, args.max_pages, args.extra_urls)
+        (desktop_links, final_url), (mobile_links, _) = await asyncio.gather(discover_links(browser, args.url, "desktop"),
+                                                                             discover_links(browser, args.url, "mobile"))
+        # Links resolve against the page's final URL, so a redirect (shop.com -> www.shop.com) must move the origin too.
+        start = final_url or args.url
+        origin = site_host(start)
+        pages = pick_pages(start, desktop_links + mobile_links, args.max_pages, args.extra_urls)
 
         # If no product page was linked from home, look one level deeper (a collection page).
         if not any(classify(u) == "product" for u in pages):
             for u in [u for u in pages if classify(u) == "collection"][:2]:
-                deeper = await discover_links(browser, u, "desktop")
+                deeper, _ = await discover_links(browser, u, "desktop")
                 products = [norm(l["href"]) for l in deeper
-                            if urlparse(l["href"]).netloc.lower() == origin and classify(norm(l["href"])) == "product"]
+                            if site_host(l["href"]) == origin and classify(norm(l["href"])) == "product"]
                 if products:
                     pages.insert(1, products[0])
                     pages = list(dict.fromkeys(pages))[:args.max_pages]
@@ -361,7 +369,11 @@ async def run_capture(args):
                 try:
                     data = await capture_page(browser, url, profile, cap / slug / profile, args.max_slices)
                     if profile == "mobile" and idx < args.throttled_pages:
-                        data["throttled"] = await throttled_load(browser, url, profile)
+                        # A failed slow-network measurement must not throw away the good capture.
+                        try:
+                            data["throttled"] = await throttled_load(browser, url, profile)
+                        except Exception as e:
+                            print(f"  ! {slug}: slow-network measurement failed ({str(e).splitlines()[0][:120]})", flush=True)
                         (cap / slug / profile / "data.json").write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
                 except Exception as e:
                     print(f"  ! {slug} {profile}: {e}", flush=True)

@@ -35,24 +35,41 @@ def load_results(run):
                 problems.append(f"{f.name}: entry without id")
                 continue
             r["_source"] = "live" if f.name.startswith("live_") else "panel"
+            # Walkers often cite step screenshots by bare name ("step_03.jpg"): look in their session folder too.
+            bases = [run / "walk" / f.stem[len("live_"):], run] if f.name.startswith("live_") else [run]
             for i in r.get("issues") or []:
                 if isinstance(i, dict):
-                    i["shot"] = resolve_shot(i.get("shot"), images)
+                    i["shot"] = resolve_shot(i.get("shot"), images, bases)
             results[r["id"]] = r
     return results, problems
 
 
-def resolve_shot(shot, images):
+def resolve_shot(shot, images, bases=()):
     """An issue's screenshot: a brief image id (i03), a measured-check id (u004) or a walker's step path."""
     if not shot or not isinstance(shot, str):
         return None
-    shot = shot.strip()
-    m = re.fullmatch(r"\[?(i\d+)\]?", shot)
+    shot = shot.strip().strip("[]`'\" ")
+    m = re.fullmatch(r"[iI](\d+)", shot)
     if m:
-        return images.get(m.group(1))
-    if re.fullmatch(r"u\d{3}", shot):
-        return shot
-    return shot if Path(shot).exists() else None
+        return images.get(f"i{int(m.group(1)):02d}")
+    m = re.fullmatch(r"[uU](\d+)", shot)
+    if m:
+        return f"u{int(m.group(1)):03d}"
+    p = Path(shot)
+    if p.is_absolute():
+        return str(p) if p.exists() else None
+    for base in bases:
+        if (base / p).exists():
+            return str((base / p).resolve())
+    return None
+
+
+def to_score(v):
+    """1-5 score from an int, float or numeric string; None if it isn't a number."""
+    try:
+        return max(1, min(5, round(float(v))))
+    except (TypeError, ValueError):
+        return None
 
 
 def norm_where(w):
@@ -64,7 +81,7 @@ def norm_where(w):
 def clean(r):
     r["outcome"] = r.get("outcome") if r.get("outcome") in OUTCOMES else OUTCOMES[-1]
     scores = r.get("scores") or {}
-    r["scores"] = {k: max(1, min(5, int(scores[k]))) for k in SCORE_KEYS if isinstance(scores.get(k), (int, float))}
+    r["scores"] = {k: to_score(scores.get(k)) for k in SCORE_KEYS if to_score(scores.get(k)) is not None}
     r["issues"] = [i for i in (r.get("issues") or []) if isinstance(i, dict) and i.get("what")][:5]
     for i in r["issues"]:
         i["severity"] = i.get("severity") if i.get("severity") in SEV_WEIGHT else "minor"
@@ -137,7 +154,11 @@ def main():
                                       for r in rows).most_common(10))
 
     segments = {}
-    for key in SEGMENT_KEYS:
+    # Built-in keys plus every attribute of the market (custom markets bring their own, e.g. "kids").
+    seg_keys = list(SEGMENT_KEYS) + [k for k in batches.get("attributes", []) if k not in SEGMENT_KEYS]
+    if any(p.get("view_profile") for p in personas.values()):
+        seg_keys.append("view_profile")
+    for key in seg_keys:
         groups = defaultdict(list)
         for r in rows:
             v = personas[r["id"]].get(key)
@@ -168,7 +189,7 @@ def main():
     bucket_rank = sorted(buckets.items(), key=lambda kv: -sum(SEV_WEIGHT[i["severity"]] for i in kv[1]))
 
     agg = {
-        "mode": batches.get("mode", "site"), "market": batches.get("market"), "lens": lens,
+        "mode": batches.get("mode", "site"), "market": batches.get("market"), "lens": lens, "score_keys": list(SCORE_KEYS),
         "n_personas": len(personas), "n_results": len(rows), "missing": missing, "problems": problems,
         "n_live": sum(1 for r in rows if r["_source"] == "live"),
         "overall": overall, "segments": segments, "issue_count": len(issues),

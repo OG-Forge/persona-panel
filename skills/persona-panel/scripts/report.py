@@ -18,7 +18,7 @@ SEG_LABELS = {
     "network": "Network", "language": "Language", "payment_pref": "Payment preference", "shopper_type": "Shopper type",
     "shopping_experience": "Online shopping experience", "trust_baseline": "Trust baseline",
     "accessibility_need": "Accessibility need", "traffic_source": "Arrived from", "tech_comfort": "Tech comfort",
-    "gender": "Gender", "patience": "Patience",
+    "gender": "Gender", "patience": "Patience", "view_profile": "Screen type",
 }
 SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
@@ -64,6 +64,25 @@ def outcome_chip(o):
 
 def bar(pct, cls=""):
     return f'<span class="bar {cls}"><span style="width:{max(0, min(100, pct or 0))}%"></span></span>'
+
+
+def num(v):
+    """A number from LLM output that may be null, '4', 4.5 or 'high'."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def title_of(x):
+    """Synthesis lists may hold strings or {"title": ...} objects."""
+    if isinstance(x, dict):
+        return str(x.get("title") or x.get("text") or "")
+    return str(x)
+
+
+def as_list(v):
+    return v if isinstance(v, list) else ([v] if v else [])
 
 
 _IMG_CACHE = {}
@@ -125,14 +144,15 @@ def render(run, title, subject):
     lens = agg.get("lens") or {}
     outs = lens.get("outcomes", ["buy", "maybe", "no"])
     out_labels = lens.get("outcome_labels", {"buy": "Would buy", "maybe": "maybe", "no": "no"})
-    score_keys = lens.get("scores", ["trust", "clarity", "ease", "value"])
+    score_keys = lens.get("scores", agg.get("score_keys", ["clarity", "trust", "appeal", "ease", "value"]))
     score_labels = lens.get("score_labels", {})
     OUT_CLASS.update(dict(zip(outs, ["buy", "maybe", "no"])))
     seg_scores = score_keys[:3]
 
-    themes = sorted(syn.get("themes", []), key=lambda t: (-int(t.get("impact", 0)), SEV_ORDER.get(t.get("severity"), 9),
-                                                          -len(t.get("persona_ids", []))))
-    quick = set(syn.get("quick_wins", []))
+    themes = [t for t in syn.get("themes", []) if isinstance(t, dict)]
+    themes = sorted(themes, key=lambda t: (-num(t.get("impact")), SEV_ORDER.get(t.get("severity"), 9),
+                                                          -len(as_list(t.get("persona_ids")))))
+    quick = {title_of(q) for q in syn.get("quick_wins", []) or []}
     shot_map = agg.get("shots", {})
     probes_file = run / "probes" / "probes.json"
     probe_findings = {f["id"]: f for f in json.loads(probes_file.read_text(encoding="utf-8"))["findings"]} if probes_file.exists() else {}
@@ -148,20 +168,20 @@ def render(run, title, subject):
         return [ref] if ref and Path(ref).exists() else []
 
     def theme_html(i, t):
-        ids = [pid for pid in t.get("persona_ids", []) if pid in personas]
+        ids = [pid for pid in as_list(t.get("persona_ids")) if pid in personas]
         pct = round(100 * len(ids) / n) if n else 0
         voices = "".join(
             f'<li><q>{e(results[pid].get("quote", ""))}</q> <span class="muted">— {e(who(personas[pid]))}</span></li>'
             for pid in ids[:6] if pid in results and results[pid].get("quote"))
         qw = '<span class="chip qw">quick win</span>' if t.get("title") in quick else ""
         paths = []
-        for ref in list(t.get("shots", [])) + list(t.get("probe_ids", [])):
+        for ref in list(as_list(t.get("shots"))) + list(as_list(t.get("probe_ids"))):
             for pth in resolve(ref):
                 if pth not in paths:
                     paths.append(pth)
-        devices = t.get("devices", [])
+        devices = as_list(t.get("devices"))
         probe_note = ""
-        for pid in t.get("probe_ids", []):
+        for pid in as_list(t.get("probe_ids")):
             g = group_of.get(pid)
             if g:
                 probe_note += (f'<p class="measured"><b>Measured ({e(pid)}):</b> {e(g["title"])}. '
@@ -198,15 +218,13 @@ def render(run, title, subject):
 
     seg_html = []
     for key, groups in agg.get("segments", {}).items():
-        if key not in SEG_LABELS:
-            continue
         rows = []
         for v, s in groups.items():
             positive = s["buy_pct"] + s["maybe_pct"]
             rows.append(f"<tr><td>{e(label(v))}</td><td class=num>{s['n']}</td>"
                         f"<td>{bar(positive, 'pos')}<span class=num>{positive}%</span></td>"
                         f"" + "".join(f"<td class=num>{s['scores'].get(k) or '–'}</td>" for k in seg_scores) + "</tr>")
-        seg_html.append(f"""<details class="seg"><summary>{e(SEG_LABELS[key])}</summary>
+        seg_html.append(f"""<details class="seg"><summary>{e(SEG_LABELS.get(key, label(key).capitalize()))}</summary>
 <table><thead><tr><th></th><th class=num>n</th><th>{e(outs[0])} + {e(outs[1])}</th>{"".join(f"<th class=num>{e(score_labels.get(k, label(k)).lower())}</th>" for k in seg_scores)}</tr></thead>
 <tbody>{''.join(rows)}</tbody></table></details>""")
 
@@ -245,11 +263,12 @@ def render(run, title, subject):
         *([] if lens else [tile("Got the offer quickly", f"{ov.get('understood_offer_pct', 0)}%", "understood what it is")]),
         *[tile(score_labels.get(k, label(k).capitalize()), f"{sc.get(k) or '–'}/5") for k in score_keys],
     ])
-    summary = "".join(f"<li>{e(s)}</li>" for s in syn.get("summary", []))
-    insights = "".join(f"<li>{e(s)}</li>" for s in syn.get("segment_insights", []))
-    strengths = "".join(f"<li>{e(s.get('title'))} <span class=muted>({len(s.get('persona_ids', []))} personas)</span></li>"
-                        for s in syn.get("strengths", []))
-    questions = "".join(f"<li>{e(q)}</li>" for q in syn.get("open_questions", []))
+    summary = "".join(f"<li>{e(title_of(s))}</li>" for s in as_list(syn.get("summary")))
+    insights = "".join(f"<li>{e(title_of(s))}</li>" for s in as_list(syn.get("segment_insights")))
+    strengths = "".join(
+        f"<li>{e(title_of(s))}" + (f" <span class=muted>({len(s.get('persona_ids') or [])} personas)</span>" if isinstance(s, dict) else "")
+        + "</li>" for s in as_list(syn.get("strengths")))
+    questions = "".join(f"<li>{e(title_of(q))}</li>" for q in as_list(syn.get("open_questions")))
     stack = (f'<div class="stack"><span class="s-buy" style="flex:{ov["buy_pct"]}"></span>'
              f'<span class="s-maybe" style="flex:{ov["maybe_pct"]}"></span><span class="s-no" style="flex:{ov["no_pct"]}"></span></div>')
 

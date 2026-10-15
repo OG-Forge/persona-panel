@@ -49,6 +49,8 @@ def slow_note(persona, run, manifest):
     if fcp is None:
         return ""
     def scale(v):
+        if v is None:
+            return "?"
         return f">{round(45 * factor)}" if isinstance(v, str) else round(v * factor, 1)
     return (f" On their connection the first page shows something after ~{scale(fcp)}s and finishes loading after "
             f"~{scale(load)}s ({th.get('transfer_kb')} KB on a data plan).")
@@ -94,6 +96,28 @@ def profile_digest(digest, profile):
     blocks = digest.split("\n### ")
     head, rest = blocks[0], blocks[1:]
     return head + "".join("\n### " + b for b in rest if f"({profile})" in b.split("\n", 1)[0])
+
+
+FALLBACK_PROFILES = {"mobile": ["mobile", "mobile_large", "tablet"], "tablet": ["tablet", "laptop", "mobile", "desktop"],
+                     "laptop": ["laptop", "laptop_hd", "desktop_legacy", "desktop", "tablet"],
+                     "desktop": ["desktop", "desktop_legacy", "laptop_hd", "laptop"]}
+
+
+def captured_profile(manifest, wanted):
+    """The batch's screen type if it was captured, else the nearest one that was (a partial --profiles capture)."""
+    have = set(manifest.get("profiles") or [p for page in manifest["pages"] for p in page["profiles"]])
+    for p in FALLBACK_PROFILES.get(wanted, [wanted]):
+        if p in have:
+            return p
+    if have:
+        return sorted(have)[0]
+    raise SystemExit("The capture has no screenshots for any device profile")
+
+
+def lens_schema(lens_md):
+    """The '## Output schema' section of a lens file (walker briefs need it too)."""
+    marker = "## Output schema"
+    return lens_md[lens_md.index(marker) + len(marker):].strip() if marker in lens_md else ""
 
 
 PROBE_PROFILES = {"mobile": ("mobile", "mobile_large"), "tablet": ("tablet",), "laptop": ("laptop", "laptop_hd"),
@@ -148,8 +172,14 @@ def main():
         if not (lens_dir / f"{args.lens}.md").exists():
             raise SystemExit(f"Unknown lens '{args.lens}'. Available: {[f.stem for f in lens_dir.glob('*.md')]}")
         panel_rules = (lens_dir / f"{args.lens}.md").read_text(encoding="utf-8")
+        walker_schema = lens_schema(panel_rules)
         schema = ""
         (run / "lens.json").write_text((lens_dir / f"{args.lens}.json").read_text(encoding="utf-8"), encoding="utf-8")
+    else:
+        walker_schema = schema
+        if (run / "lens.json").exists() and not args.only:
+            # A full (non-redo) default run must not inherit an earlier lens's outcome words.
+            (run / "lens.json").unlink()
 
     panel = batches["panel"]
     if args.only:
@@ -159,26 +189,29 @@ def main():
     for b in panel:
         out = run / "results" / f"{b['batch_id']}.json"
         cards = []
+        shot_profile = captured_profile(manifest, b["profile"]) if mode != "concept" else None
         for pid in b["persona_ids"]:
             p = personas[pid]
             if mode == "concept":
                 cards.append(f"- **{pid}** — {p['card']}")
             else:
                 cards.append(f"- **{pid}** — {p['card']}{slow_note(p, run, manifest)}\n"
-                             f"  Arrives at: {p['entry_page'].replace('_', ' ')} page. Sees: {screen_plan(p, manifest, b['profile'])}.")
+                             f"  Arrives at: {p['entry_page'].replace('_', ' ')} page. Sees: {screen_plan(p, manifest, shot_profile)}.")
         parts = [f"# Persona panel brief {b['batch_id']} ({len(b['persona_ids'])} personas)", "", panel_rules, focus]
         if mode == "concept":
             parts += ["## The concept being evaluated", concept]
         else:
-            imgs = core_images(manifest, b["profile"], run, args.max_images)
+            imgs = core_images(manifest, shot_profile, run, args.max_images)
             ids = {f"i{n + 1:02d}": path for n, path in enumerate(imgs)}
             (run / "briefs" / f"{b['batch_id']}_images.json").write_text(json.dumps(ids, indent=1), encoding="utf-8")
-            parts += [f"## Screenshots to open ({b['profile']} view) — Read ALL of these in ONE turn (parallel Read calls)",
-                      "In an issue's `shot`, use the short id in brackets (e.g. i03), not the path.",
+            note = "" if shot_profile == b["profile"] else (f" These were captured on {shot_profile} because {b['profile']} wasn't "
+                                                           f"captured; imagine them on your {b['profile']} screen.")
+            parts += [f"## Screenshots to open ({shot_profile} view) — Read ALL of these in ONE turn (parallel Read calls)",
+                      "In an issue's `shot`, use the short id in brackets (e.g. i03), not the path." + note,
                       *[f"- [{k}] {Path(v).parent.parent.name}/{Path(v).stem}: {v}" for k, v in ids.items()], "",
                       probe_facts(run, b["profile"]),
                       "## Site digest (measured facts from the capture; trust these over guesses)",
-                      profile_digest(digest, b["profile"])]
+                      profile_digest(digest, shot_profile)]
         parts += ["## Your personas", *cards, "", "## Output", f"Write ONE file: `{out}`" + (" (format: see Output schema above)" if not schema else ""), schema]
         (run / "briefs" / f"{b['batch_id']}.md").write_text("\n".join(parts), encoding="utf-8")
 
@@ -193,7 +226,7 @@ def main():
             text = walker_rules.replace("{WALK}", cmd).replace("{DEVICE}", p["view_profile"]) \
                                .replace("{START_URL}", entry["url"]).replace("{OUT}", str(out)).replace("{PID}", pid)
             parts = [f"# Live walker brief {pid}", "", f"## You are\n{p['card']}{slow_note(p, run, manifest)}", "", text, focus,
-                     "## Output schema", schema]
+                     "## Output schema", walker_schema]
             (run / "briefs" / f"live_{pid}.md").write_text("\n".join(parts), encoding="utf-8")
 
     n_live = len(batches["live"]) if mode == "site" else 0
