@@ -1,0 +1,65 @@
+{
+  "name": "global",
+  "description": "English-speaking international online shoppers (North America, UK/EU, Australia, plus SEA/LatAm visitors browsing in English). Rough default weights; override per site.",
+  "currency": "$",
+  "phrases": {
+    "shopping_experience": {"frequent": "Shops online all the time and compares everything to Amazon/Shopify-store polish."},
+    "trust_baseline": {"skeptical": "Very skeptical; needs strong proof (reviews, clear returns, real company details) before buying."}
+  },
+  "attributes": [
+    {"key": "age_band", "values": {"18-24": 22, "25-34": 28, "35-44": 21, "45-54": 15, "55+": 14}},
+    {"key": "gender", "values": {"female": 50, "male": 47, "nonbinary": 3}},
+    {"key": "region", "values": {"north_america": 38, "uk_ireland": 14, "western_europe": 14, "australia_nz": 8, "south_east_asia": 12, "latin_america": 8, "middle_east": 6}},
+    {"key": "income", "values": {"low": 28, "middle": 50, "high": 22}},
+    {"key": "device", "values": {"budget_android": 18, "midrange_android": 20, "iphone": 34, "desktop_laptop": 22, "tablet": 6}},
+    {"key": "network", "values": {"fast_wifi": 45, "good_4g_5g": 38, "patchy_4g": 13, "slow_3g": 4}},
+    {"key": "language", "values": {"english_native": 62, "english_second_language": 38}},
+    {"key": "tech_comfort", "values": {"low": 16, "medium": 48, "high": 36}},
+    {"key": "shopping_experience", "values": {"first_time_online": 3, "occasional": 32, "frequent": 65}},
+    {"key": "payment_pref", "values": {"card": 40, "apple_google_pay": 26, "paypal": 18, "buy_now_pay_later": 10, "local_wallet": 6}},
+    {"key": "shopper_type", "values": {"impulse_buyer": 15, "deal_hunter": 16, "comparison_shopper": 18, "brand_conscious": 11, "quality_seeker": 13, "gift_buyer": 9, "casual_browser": 11, "skeptic": 7}},
+    {"key": "traffic_source", "values": {"instagram_ad": 20, "tiktok": 16, "google_search": 24, "friend_shared_link": 10, "influencer_link": 10, "reddit_thread": 7, "email_newsletter": 6, "typed_url_or_bookmark": 7}},
+    {"key": "intent", "values": {"ready_to_buy": 18, "considering": 40, "just_browsing": 32, "researching_for_later": 10}},
+    {"key": "patience", "values": {"low": 38, "medium": 44, "high": 18}},
+    {"key": "trust_baseline", "values": {"trusting": 25, "cautious": 50, "skeptical": 25}},
+    {"key": "accessibility_need", "values": {"none": 78, "low_vision": 5, "color_blind": 4, "screen_reader": 2, "motor_tremor": 3, "dyslexia": 4, "adhd_easily_distracted": 4}},
+    {"key": "aesthetic_taste", "values": {"minimal_clean": 24, "bold_loud": 16, "playful_quirky": 16, "premium_luxury": 12, "trend_chaser": 16, "practical_no_fuss": 16}},
+    {"key": "context", "values": {"relaxed_at_home": 32, "late_night_scrolling": 16, "on_commute": 14, "sneaking_a_look_at_work": 14, "in_a_hurry": 12, "with_a_friend_deciding_together": 12}}
+  ],
+  "rules": [
+    {"if": {"age_band": "55+"}, "then": {"tech_comfort": {"low": 3.5, "high": 0.4}, "accessibility_need": {"low_vision": 5, "motor_tremor": 3}, "device": {"desktop_laptop": 2, "tablet": 2.5}, "payment_pref": {"paypal": 1.8, "buy_now_pay_later": 0.3}}},
+    {"if": {"age_band": "18-24"}, "then": {"tech_comfort": {"high": 2}, "patience": {"low": 1.6}, "traffic_source": {"tiktok": 2.2, "instagram_ad": 1.4}, "payment_pref": {"buy_now_pay_later": 1.8, "apple_google_pay": 1.4}, "income": {"low": 1.8}}},
+    {"if": {"region": "south_east_asia"}, "then": {"language": {"english_second_language": 3}, "payment_pref": {"local_wallet": 4}, "device": {"budget_android": 1.8, "midrange_android": 1.5}, "network": {"patchy_4g": 1.8}}},
+    {"if": {"region": "latin_america"}, "then": {"language": {"english_second_language": 4}, "payment_pref": {"local_wallet": 2.5}, "device": {"budget_android": 1.8}, "network": {"patchy_4g": 1.8, "slow_3g": 2}}},
+    {"if": {"region": "middle_east"}, "then": {"language": {"english_second_language": 3}}},
+    {"if": {"region": "western_europe"}, "then": {"language": {"english_second_language": 3}, "payment_pref": {"paypal": 1.5}}},
+    {"if": {"income": "high"}, "then": {"device": {"iphone": 2, "budget_android": 0.3}, "aesthetic_taste": {"premium_luxury": 2}, "shopper_type": {"deal_hunter": 0.6}}},
+    {"if": {"income": "low"}, "then": {"device": {"budget_android": 2, "iphone": 0.5}, "shopper_type": {"deal_hunter": 1.8}, "payment_pref": {"buy_now_pay_later": 1.5}}},
+    {"if": {"device": "desktop_laptop"}, "then": {"network": {"fast_wifi": 3}, "context": {"sneaking_a_look_at_work": 2.5, "on_commute": 0.1}}},
+    {"if": {"shopper_type": "skeptic"}, "then": {"trust_baseline": {"skeptical": 3, "trusting": 0.3}}},
+    {"if": {"shopper_type": "impulse_buyer"}, "then": {"intent": {"ready_to_buy": 1.8}, "patience": {"low": 1.5}}},
+    {"if": {"shopper_type": "casual_browser"}, "then": {"intent": {"just_browsing": 2.5, "ready_to_buy": 0.4}}},
+    {"if": {"context": "in_a_hurry"}, "then": {"patience": {"low": 2.5}}}
+  ],
+  "cities": {
+    "north_america": ["Austin", "Toronto", "Columbus", "Phoenix", "Brooklyn", "Vancouver", "Atlanta", "Denver", "rural Iowa", "Montreal"],
+    "uk_ireland": ["Manchester", "London", "Leeds", "Glasgow", "Dublin", "Bristol"],
+    "western_europe": ["Berlin", "Amsterdam", "Lyon", "Madrid", "Stockholm", "Milan"],
+    "australia_nz": ["Melbourne", "Brisbane", "Auckland", "Perth"],
+    "south_east_asia": ["Manila", "Jakarta", "Kuala Lumpur", "Ho Chi Minh City", "Bangkok", "Singapore"],
+    "latin_america": ["Mexico City", "Bogotá", "São Paulo", "Buenos Aires", "Lima"],
+    "middle_east": ["Dubai", "Riyadh", "Doha", "Amman"]
+  },
+  "names": {
+    "female": ["Emma", "Olivia", "Sophie", "Chloe", "Maria", "Aisha", "Mei", "Lucia", "Hannah", "Grace", "Isabela", "Nour", "Linh", "Sarah", "Zoe", "Camila", "Freya", "Yuki"],
+    "male": ["Liam", "Noah", "James", "Lucas", "Mateo", "Omar", "Wei", "Daniel", "Ethan", "Jonas", "Rafael", "Minh", "Ben", "Carlos", "Oscar", "Hiro", "Tom", "Ahmed"],
+    "nonbinary": ["Alex", "Sam", "River", "Jordan", "Kai", "Robin"]
+  },
+  "occupations": {
+    "18-24": ["university student", "barista", "junior developer", "retail associate", "warehouse worker", "intern"],
+    "25-34": ["software engineer", "nurse", "teacher", "marketing manager", "electrician", "freelance designer", "new parent"],
+    "35-44": ["project manager", "small business owner", "accountant", "physician", "stay-at-home parent", "sales director"],
+    "45-54": ["operations director", "contractor", "professor", "real-estate agent", "civil servant"],
+    "55+": ["retiree", "part-time consultant", "grandparent", "semi-retired shop owner"]
+  }
+}

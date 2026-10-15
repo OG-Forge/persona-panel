@@ -1,0 +1,7 @@
+{
+  "name": "persona-panel",
+  "description": "Simulated customer panel of 100+ diverse personas that reviews a website or concept and returns a prioritised fix list.",
+  "version": "0.1.0",
+  "author": {"name": "Ojas Goel"},
+  "license": "MIT"
+}

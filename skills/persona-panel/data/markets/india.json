@@ -1,0 +1,59 @@
+{
+  "name": "india",
+  "description": "Indian online shoppers. Weights are rough, drawn from 2025-26 industry reporting: tier-2/3 cities are ~2/3 of new D2C orders, ~80% of orders happen on mobile, COD is preferred by ~50-60% of tier-2/3 buyers vs ~20-25% in metros, women are ~35-40% of online shoppers. Treat them as a sensible default, not census truth; override per site.",
+  "currency": "₹",
+  "attributes": [
+    {"key": "age_band", "values": {"18-24": 30, "25-34": 34, "35-44": 18, "45-54": 11, "55+": 7}},
+    {"key": "gender", "values": {"female": 40, "male": 57, "nonbinary": 3}},
+    {"key": "location_tier", "values": {"metro": 35, "tier2": 38, "tier3_small_town": 27}},
+    {"key": "income", "values": {"low": 35, "middle": 45, "high": 20}},
+    {"key": "device", "values": {"budget_android": 40, "midrange_android": 28, "iphone": 12, "desktop_laptop": 14, "tablet": 6}},
+    {"key": "network", "values": {"fast_wifi": 25, "good_4g_5g": 35, "patchy_4g": 30, "slow_3g": 10}},
+    {"key": "language", "values": {"english_fluent": 35, "hinglish_comfortable": 40, "regional_language_first": 25}},
+    {"key": "tech_comfort", "values": {"low": 20, "medium": 50, "high": 30}},
+    {"key": "shopping_experience", "values": {"first_time_online": 8, "occasional": 42, "frequent": 50}},
+    {"key": "payment_pref", "values": {"cod_only": 22, "cod_preferred": 20, "upi": 43, "card_or_emi": 15}},
+    {"key": "shopper_type", "values": {"impulse_buyer": 15, "deal_hunter": 18, "comparison_shopper": 17, "brand_conscious": 10, "quality_seeker": 12, "gift_buyer": 8, "casual_browser": 12, "skeptic": 8}},
+    {"key": "traffic_source", "values": {"instagram_ad": 28, "google_search": 20, "whatsapp_forward": 14, "influencer_link": 12, "youtube": 8, "typed_url_or_bookmark": 8, "saw_it_on_a_marketplace": 10}},
+    {"key": "intent", "values": {"ready_to_buy": 18, "considering": 40, "just_browsing": 32, "researching_for_later": 10}},
+    {"key": "patience", "values": {"low": 35, "medium": 45, "high": 20}},
+    {"key": "trust_baseline", "values": {"trusting": 22, "cautious": 50, "skeptical": 28}},
+    {"key": "accessibility_need", "values": {"none": 80, "low_vision": 5, "color_blind": 4, "screen_reader": 2, "motor_tremor": 2, "dyslexia": 3, "adhd_easily_distracted": 4}},
+    {"key": "aesthetic_taste", "values": {"minimal_clean": 22, "bold_loud": 18, "playful_quirky": 16, "premium_luxury": 12, "trend_chaser": 17, "practical_no_fuss": 15}},
+    {"key": "context", "values": {"relaxed_at_home": 30, "late_night_scrolling": 18, "on_commute": 16, "sneaking_a_look_at_work": 12, "in_a_hurry": 12, "with_a_friend_deciding_together": 12}}
+  ],
+  "rules": [
+    {"if": {"age_band": "55+"}, "then": {"tech_comfort": {"low": 4, "high": 0.3}, "accessibility_need": {"low_vision": 5, "motor_tremor": 3}, "trust_baseline": {"skeptical": 1.6}, "shopper_type": {"impulse_buyer": 0.4}, "device": {"tablet": 2, "desktop_laptop": 1.5}}},
+    {"if": {"age_band": "45-54"}, "then": {"tech_comfort": {"low": 2}, "accessibility_need": {"low_vision": 2.5}, "trust_baseline": {"cautious": 1.4}}},
+    {"if": {"age_band": "18-24"}, "then": {"tech_comfort": {"high": 2.2, "low": 0.4}, "patience": {"low": 1.6}, "income": {"low": 1.8, "high": 0.5}, "traffic_source": {"instagram_ad": 1.5, "influencer_link": 1.6}, "aesthetic_taste": {"trend_chaser": 1.6, "bold_loud": 1.4}, "context": {"late_night_scrolling": 1.8}}},
+    {"if": {"location_tier": "metro"}, "then": {"income": {"high": 2, "low": 0.6}, "language": {"english_fluent": 1.9}, "network": {"fast_wifi": 1.6, "slow_3g": 0.4}, "payment_pref": {"upi": 1.3, "card_or_emi": 1.6, "cod_only": 0.5}}},
+    {"if": {"location_tier": "tier3_small_town"}, "then": {"income": {"low": 1.8, "high": 0.4}, "language": {"regional_language_first": 2.2, "english_fluent": 0.5}, "network": {"patchy_4g": 1.7, "slow_3g": 2.2, "fast_wifi": 0.5}, "payment_pref": {"cod_only": 2.2, "cod_preferred": 1.5}, "shopping_experience": {"first_time_online": 2.2}, "device": {"budget_android": 1.7, "iphone": 0.3, "desktop_laptop": 0.5}}},
+    {"if": {"location_tier": "tier2"}, "then": {"payment_pref": {"cod_only": 1.5, "cod_preferred": 1.4}, "device": {"budget_android": 1.3}}},
+    {"if": {"income": "high"}, "then": {"device": {"iphone": 3, "budget_android": 0.3}, "payment_pref": {"card_or_emi": 2, "cod_only": 0.5}, "aesthetic_taste": {"premium_luxury": 2}, "shopper_type": {"deal_hunter": 0.6, "quality_seeker": 1.5}}},
+    {"if": {"income": "low"}, "then": {"device": {"budget_android": 1.8, "iphone": 0.2}, "shopper_type": {"deal_hunter": 1.8}, "aesthetic_taste": {"premium_luxury": 0.4}}},
+    {"if": {"device": "desktop_laptop"}, "then": {"network": {"fast_wifi": 3, "slow_3g": 0.3}, "context": {"sneaking_a_look_at_work": 2.5, "on_commute": 0.1}}},
+    {"if": {"shopping_experience": "first_time_online"}, "then": {"trust_baseline": {"skeptical": 2}, "payment_pref": {"cod_only": 2.5}}},
+    {"if": {"shopper_type": "skeptic"}, "then": {"trust_baseline": {"skeptical": 3, "trusting": 0.3}}},
+    {"if": {"shopper_type": "impulse_buyer"}, "then": {"intent": {"ready_to_buy": 1.8}, "patience": {"low": 1.5}}},
+    {"if": {"shopper_type": "casual_browser"}, "then": {"intent": {"just_browsing": 2.5, "ready_to_buy": 0.4}}},
+    {"if": {"shopper_type": "gift_buyer"}, "then": {"intent": {"ready_to_buy": 1.6}}},
+    {"if": {"context": "in_a_hurry"}, "then": {"patience": {"low": 2.5}}}
+  ],
+  "cities": {
+    "metro": ["Mumbai", "Delhi", "Bengaluru", "Hyderabad", "Chennai", "Kolkata", "Pune", "Ahmedabad", "Gurugram", "Noida"],
+    "tier2": ["Indore", "Jaipur", "Lucknow", "Chandigarh", "Coimbatore", "Nagpur", "Bhopal", "Surat", "Kochi", "Vizag", "Patna", "Dehradun", "Ludhiana", "Vadodara", "Guwahati", "Mysuru"],
+    "tier3_small_town": ["Sagar (MP)", "Hapur (UP)", "Bhilwara (RJ)", "Karimnagar (TS)", "Kottayam (KL)", "Siliguri (WB)", "Hisar (HR)", "Satara (MH)", "Darbhanga (BR)", "Erode (TN)", "Bathinda (PB)", "Jalgaon (MH)", "Rewa (MP)", "Tezpur (AS)"]
+  },
+  "names": {
+    "female": ["Priya", "Ananya", "Sneha", "Kavya", "Pooja", "Riya", "Meera", "Divya", "Aditi", "Fatima", "Shreya", "Nandini", "Harpreet", "Lakshmi", "Tanvi", "Ishita", "Sana", "Pallavi", "Deepa", "Anjali", "Gayatri", "Ritu", "Zoya", "Bhavna", "Swati"],
+    "male": ["Rahul", "Arjun", "Aman", "Rohit", "Vikram", "Karan", "Imran", "Siddharth", "Aditya", "Manish", "Gurpreet", "Sanjay", "Nikhil", "Abhishek", "Ravi", "Faizan", "Harsh", "Vivek", "Suresh", "Yash", "Pranav", "Kunal", "Deepak", "Arun", "Mohit"],
+    "nonbinary": ["Sam", "Kiran", "Ashu", "Noor", "Jaya", "Ray"]
+  },
+  "occupations": {
+    "18-24": ["college student", "engineering student", "first-job IT trainee", "content creator (small)", "retail store staff", "delivery partner", "coaching-centre aspirant", "design intern"],
+    "25-34": ["software engineer", "sales executive", "school teacher", "nurse", "small shop owner", "bank clerk", "marketing associate", "gym trainer", "freelance photographer", "call-centre agent", "new parent on leave"],
+    "35-44": ["mid-level manager", "government employee", "business owner", "doctor", "homemaker", "chartered accountant", "school principal", "auto-parts dealer"],
+    "45-54": ["senior manager", "shopkeeper", "homemaker", "college professor", "contractor", "bank branch manager"],
+    "55+": ["retired government officer", "homemaker", "retired teacher", "family business owner", "pensioner"]
+  }
+}
