@@ -23,16 +23,15 @@ sys.dont_write_bytecode = True  # keep the skill folder read-only
 
 import json
 import os
-import re
 import socket
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
 from devices import PROFILES
+from safety import FOCUSED_KIND_JS, KIND_JS, field_refusal, goto_refusal, on_site, press_refusal, site_host
 
 # Same device sizes as capture.py and probe.py.
 DEVICES = {name: {"size": (p["viewport"]["width"], p["viewport"]["height"]), "ua": p["ua"], "touch": p["mobile"]}
@@ -105,16 +104,6 @@ def load_state(session):
     if not p.exists():
         sys.exit("No browser for this session. Run: walk.py SESSION start URL")
     return json.loads(p.read_text())
-
-
-def site_host(url):
-    host = urlparse(url).netloc.lower()
-    return host[4:] if host.startswith("www.") else host
-
-
-def on_site(url, state):
-    """The walker may only be on the site under test (or blank pages)."""
-    return not state.get("site") or url.startswith(("about:", "data:")) or site_host(url) == state["site"]
 
 
 def guard(page, state, blocked):
@@ -256,13 +245,27 @@ def act(session, cmd, rest):
                 page.get_by_text(rest[0], exact=False).first.click(timeout=8000)
             elif cmd == "type":
                 loc = locate(page, rest[0])
-                kind = loc.evaluate("e => [e.type || '', e.name || '', e.autocomplete || '', e.id || '', e.placeholder || ''].join(' ').toLowerCase()")
-                if re.search(r"password|e-?mail|\btel\b|phone|mobile|cc-|card|cvv|otp|address|\bname\b", kind):
-                    raise RuntimeError(f"refused: walkers may not type into personal-data fields ({kind.strip()[:60]})")
+                # Inputs, textareas and contenteditable elements are all checked the same way.
+                refusal = field_refusal(loc.evaluate(KIND_JS), rest[1])
+                if refusal:
+                    raise RuntimeError(refusal)
                 loc.fill(rest[1], timeout=8000)
             elif cmd == "select":
-                locate(page, rest[0]).select_option(label=rest[1], timeout=8000)
+                loc = locate(page, rest[0])
+                refusal = field_refusal(loc.evaluate(KIND_JS), rest[1])
+                if refusal:
+                    raise RuntimeError(refusal)
+                loc.select_option(label=rest[1], timeout=8000)
             elif cmd == "press":
+                # Printable keys would type into whatever has focus, so the field check applies to them too.
+                for frame in page.frames:
+                    try:
+                        focused = frame.evaluate(FOCUSED_KIND_JS)
+                    except Exception:
+                        continue
+                    refusal = press_refusal(rest[0], focused)
+                    if refusal:
+                        raise RuntimeError(refusal)
                 page.keyboard.press(rest[0])
             elif cmd == "scroll":
                 h = page.viewport_size["height"] if page.viewport_size else 700
@@ -270,8 +273,9 @@ def act(session, cmd, rest):
             elif cmd == "back":
                 page.go_back(wait_until="domcontentloaded", timeout=30000)
             elif cmd == "goto":
-                if not on_site(rest[0], state):
-                    raise RuntimeError(f"refused: {rest[0]} is not on the site under test")
+                refusal = goto_refusal(rest[0], state)
+                if refusal:
+                    raise RuntimeError(refusal)
                 page.goto(rest[0], wait_until="domcontentloaded", timeout=60000)
             else:
                 sys.exit(f"Unknown command: {cmd}")
