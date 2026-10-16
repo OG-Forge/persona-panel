@@ -46,6 +46,33 @@ def test_skill_frontmatter():
     assert len(fields["description"].strip()) > 50
 
 
+AGENTS = {"pp-panelist": ({"Read", "Write"}, "haiku"), "pp-walker": ({"Bash", "Read", "Write"}, "haiku"),
+          "pp-synthesizer": ({"Read", "Write"}, "sonnet")}
+
+
+def test_plugin_agents():
+    files = {p.stem: p for p in (REPO / "agents").glob("*.md")}
+    assert set(files) == set(AGENTS)
+    for stem, (tools, model) in AGENTS.items():
+        text = files[stem].read_text(encoding="utf-8")
+        m = re.match(r"^---\n(.*?)\n---\n(.+)", text, re.S)
+        assert m, stem
+        fields = dict((k.strip(), v.strip()) for k, v in (l.split(":", 1) for l in m.group(1).splitlines()))
+        assert fields["name"] == stem
+        assert {t.strip() for t in fields["tools"].split(",")} == tools
+        assert fields["model"] == model
+        assert len(fields["description"]) > 40
+        assert "untrusted" in m.group(2).lower()
+        assert not {"hooks", "mcpServers", "permissionMode"} & set(fields), "ignored for plugin agents"
+
+
+def test_skill_dispatches_pp_agents_with_fallbacks():
+    text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    for stem in AGENTS:
+        assert f"persona-panel:{stem}" in text
+    assert "general-purpose" in text and "safety restrictions are off" in text
+
+
 def test_no_hardcoded_local_paths_or_skill_dir_state():
     for f in list(SKILL.rglob("*.md")) + list(SKILL.rglob("*.py")) + list((REPO / ".claude-plugin").glob("*.json")):
         if ".venv" in f.parts or "runs" in f.parts:

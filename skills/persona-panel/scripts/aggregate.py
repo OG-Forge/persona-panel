@@ -16,6 +16,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import paths
+from safety import new_nonce, untrusted_rule, wrap_untrusted
 
 SCORE_KEYS = ("clarity", "trust", "appeal", "ease", "value")
 SEGMENT_KEYS = ("age_band", "gender", "location_tier", "region", "income", "device", "network", "language",
@@ -25,8 +26,9 @@ SEV_WEIGHT = {"blocker": 3, "major": 2, "minor": 1}
 OUTCOMES = ("buy", "maybe", "no")
 
 
-def load_results(run):
+def load_results(run, roots=None):
     results, problems = {}, []
+    roots = paths.image_roots(run) if roots is None else roots
     for f in sorted((run / "results").glob("*.json")):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
@@ -44,28 +46,31 @@ def load_results(run):
             bases = [run / "walk" / f.stem[len("live_"):], run] if f.name.startswith("live_") else [run]
             for i in r.get("issues") or []:
                 if isinstance(i, dict):
-                    i["shot"] = resolve_shot(i.get("shot"), images, bases)
+                    i["shot"] = resolve_shot(i.get("shot"), images, bases, roots)
             results[r["id"]] = r
     return results, problems
 
 
-def resolve_shot(shot, images, bases=()):
-    """An issue's screenshot: a brief image id (i03), a measured-check id (u004) or a walker's step path."""
+def resolve_shot(shot, images, bases=(), roots=()):
+    """An issue's screenshot: a brief image id (i03), a measured-check id (u004) or a walker's step path.
+
+    Paths are only accepted when they resolve to an image inside `roots` (the runs folder and the run):
+    result files are agent output, and a hostile site could steer an agent into naming any file."""
     if not shot or not isinstance(shot, str):
         return None
     shot = shot.strip().strip("[]`'\" ")
     m = re.fullmatch(r"[iI](\d+)", shot)
     if m:
-        return images.get(f"i{int(m.group(1)):02d}")
+        found = paths.safe_image(images.get(f"i{int(m.group(1)):02d}"), roots)
+        return str(found) if found else None
     m = re.fullmatch(r"[uU](\d+)", shot)
     if m:
         return f"u{int(m.group(1)):03d}"
     p = Path(shot)
-    if p.is_absolute():
-        return str(p) if p.exists() else None
-    for base in bases:
-        if (base / p).exists():
-            return str((base / p).resolve())
+    for candidate in [p] if p.is_absolute() else [base / p for base in bases]:
+        found = paths.safe_image(candidate, roots)
+        if found:
+            return str(found)
     return None
 
 
@@ -95,8 +100,9 @@ def clean(r):
     return r
 
 
-def group_probes(findings):
-    """One entry per problem: the same section too tall on 4 devices and 3 pages is one group."""
+def group_probes(findings, run=None, roots=()):
+    """One entry per problem: the same section too tall on 4 devices and 3 pages is one group.
+    Screenshot paths (relative to the run since 0.2.1) come back absolute, and only if they are safe images."""
     groups = {}
     for f in findings:
         g = groups.setdefault(f.get("group", f["id"]), {"id": f["id"], "check": f["check"], "severity": f["severity"],
@@ -107,8 +113,10 @@ def group_probes(findings):
         if f["page"] not in g["pages"]:
             g["pages"].append(f["page"])
         g["finding_ids"].append(f["id"])
+        shots = f["shots"] if run is None else [
+            str(s) for s in (paths.safe_image(paths.run_file(run, x), roots) for x in f["shots"]) if s]
         if len(g["shots"]) < 2:
-            g["shots"] += f["shots"][:2 - len(g["shots"])]
+            g["shots"] += shots[:2 - len(g["shots"])]
         if SEV_WEIGHT.get(f["severity"], 0) > SEV_WEIGHT.get(g["severity"], 0):
             g["severity"] = f["severity"]
     return sorted(groups.values(), key=lambda g: (-SEV_WEIGHT.get(g["severity"], 0), -len(g["devices"]) * len(g["pages"])))
@@ -145,7 +153,8 @@ def main():
 
     personas = {p["id"]: p for p in json.loads((run / "personas.json").read_text(encoding="utf-8"))}
     batches = json.loads((run / "batches.json").read_text(encoding="utf-8"))
-    results, problems = load_results(run)
+    roots = paths.image_roots(run)
+    results, problems = load_results(run, roots)
     results = {pid: clean(r) for pid, r in results.items() if pid in personas}
     missing = sorted(set(personas) - set(results))
     rows = list(results.values())
@@ -187,7 +196,8 @@ def main():
             issues.append({"pid": r["id"], **{k: i.get(k, "") for k in ("where", "category", "severity", "what", "fix")},
                            "shot": shot_id(i.get("shot")), "profile": personas[r["id"]].get("view_profile", "")})
     probes_path = run / "probes" / "probes.json"
-    probe_groups = group_probes(json.loads(probes_path.read_text(encoding="utf-8"))["findings"]) if probes_path.exists() else []
+    probe_groups = (group_probes(json.loads(probes_path.read_text(encoding="utf-8"))["findings"], run, roots)
+                    if probes_path.exists() else [])
     buckets = defaultdict(list)
     for i in issues:
         buckets[(i["where"], i["category"])].append(i)
@@ -205,10 +215,12 @@ def main():
     (run / "aggregate.json").write_text(json.dumps(agg, indent=1, ensure_ascii=False), encoding="utf-8")
 
     # Compact digest for the synthesizer: grouped by (where, category), one line per issue.
-    lines = [f"# Issue digest: {len(issues)} issues from {len(rows)} personas",
-             f"Overall: {OUTCOMES[0]} {overall['buy_pct']}% / {OUTCOMES[1]} {overall['maybe_pct']}% / {OUTCOMES[2]} {overall['no_pct']}%; "
-             f"avg scores {overall['scores']}; understood offer {overall['understood_offer_pct']}%; left at {overall['left_at']}",
-             "Line format: pid|screen|severity|what => fix [screenshot id]", ""]
+    # Everything below the header is persona-written or quotes the site, so it goes inside one untrusted block.
+    nonce = new_nonce()
+    head = [f"# Issue digest: {len(issues)} issues from {len(rows)} personas",
+            "Line format: pid|screen|severity|what => fix [screenshot id]", "", untrusted_rule(nonce), ""]
+    lines = [f"Overall: {OUTCOMES[0]} {overall['buy_pct']}% / {OUTCOMES[1]} {overall['maybe_pct']}% / {OUTCOMES[2]} {overall['no_pct']}%; "
+             f"avg scores {overall['scores']}; understood offer {overall['understood_offer_pct']}%; left at {overall['left_at']}", ""]
     if probe_groups:
         lines.append(f"## MEASURED UX CHECKS (real browser, facts; {len(probe_groups)} problem groups)")
         lines += [f"{g['id']}|{g['severity']}|{', '.join(g['devices'])}|pages: {', '.join(g['pages'])}| {g['title']}. {g['detail']}"
@@ -224,7 +236,7 @@ def main():
     lines += [f"{n}x {t}" for t, n in liked.most_common(40)]
     lines += ["", "## What would change their mind (no/maybe personas)"]
     lines += [f"{r['id']}: {r.get('would_change_mind', '')}" for r in rows if r["outcome"] != OUTCOMES[0] and r.get("would_change_mind")]
-    (run / "issues_digest.md").write_text("\n".join(lines), encoding="utf-8")
+    (run / "issues_digest.md").write_text("\n".join(head + [wrap_untrusted("\n".join(lines), nonce)]), encoding="utf-8")
 
     print(f"{len(rows)}/{len(personas)} personas have results; {len(issues)} issues in {len(buckets)} buckets.")
     print(f"Outcome: {OUTCOMES[0]} {overall['buy_pct']}% / {OUTCOMES[1]} {overall['maybe_pct']}% / {OUTCOMES[2]} {overall['no_pct']}%")

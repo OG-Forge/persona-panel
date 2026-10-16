@@ -1,0 +1,16 @@
+{
+  "description": "persona-panel: confines its own subagents (pp-panelist, pp-walker, pp-synthesizer) to the runs folder and to walk.py. The main session and every other agent pass straight through.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/pp_guard.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

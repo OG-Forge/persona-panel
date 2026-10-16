@@ -187,6 +187,58 @@ def runs_dir(cfg=None):
     return Path((cfg or load_config())["runs_dir"])
 
 
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def _norm(path):
+    """Resolved, case-normalised (on Windows) form of a path, for containment checks."""
+    return Path(os.path.normcase(str(Path(path).expanduser().resolve())))
+
+
+def is_inside(path, root):
+    """True if `path` resolves to `root` or something under it (symlinks and '..' resolved first)."""
+    try:
+        return _norm(path).is_relative_to(_norm(root))
+    except (OSError, ValueError):
+        return False
+
+
+def safe_image(path, roots):
+    """The resolved path of an existing .png/.jpg/.jpeg/.webp file inside one of `roots`, else None.
+
+    Screenshot paths come from agent output (which a hostile website may have steered), so
+    briefs and the report only ever open images that this check accepts."""
+    if not path:
+        return None
+    try:
+        p = Path(str(path)).expanduser().resolve()
+    except (OSError, ValueError):
+        return None
+    if p.suffix.lower() not in IMAGE_SUFFIXES or not p.is_file():
+        return None
+    return p if any(is_inside(p, r) for r in roots if r) else None
+
+
+def image_roots(run, cfg=None):
+    """Where run screenshots may live: the configured runs folder, and the run folder itself."""
+    try:
+        roots = [runs_dir(cfg)]
+    except ConfigError:
+        roots = []
+    return roots + [Path(run)]
+
+
+def run_relative(run, path):
+    """`path` relative to the run folder, with forward slashes (how probes.json stores screenshots)."""
+    return Path(path).resolve().relative_to(Path(run).resolve()).as_posix()
+
+
+def run_file(run, path):
+    """A path stored in run data: relative paths are relative to the run folder (older runs stored absolute ones)."""
+    p = Path(str(path))
+    return p if p.is_absolute() else Path(run) / p
+
+
 def available_markets():
     """name -> path; user markets shadow bundled ones."""
     found = {p.stem: p for p in sorted(BUNDLED_MARKETS_DIR.glob("*.json"))}

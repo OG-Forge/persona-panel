@@ -62,6 +62,36 @@ For one project only, link it into that project's `.claude/skills/persona-panel`
 
 A manual install is invoked as `/persona-panel`, or in plain language. Update it with `git pull` in the clone.
 
+### Safety restrictions for a manual install (recommended)
+
+The plugin ships three restricted agents (`agents/pp-*.md`) and a guard hook (`hooks/`) that keep panel agents inside the runs folder and let live walkers run only `walk.py` (see [SECURITY.md](../SECURITY.md#prompt-injection)). A plain skill link has neither, so the skill falls back to `general-purpose` agents and says the restrictions are off. To get them:
+
+1. Copy the agents (copy, don't link, so a `git pull` doesn't change them unseen; re-copy after updating):
+
+   ```bash
+   mkdir -p ~/.claude/agents && cp /path/to/persona-panel/agents/pp-*.md ~/.claude/agents/
+   ```
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$HOME\.claude\agents"; Copy-Item "C:\path\to\persona-panel\agents\pp-*.md" "$HOME\.claude\agents\"
+   ```
+
+2. Add the guard to `~/.claude/settings.json` (merge into an existing `"hooks"` key), using the absolute path of your clone with forward slashes:
+
+   ```json
+   {
+     "hooks": {
+       "PreToolUse": [
+         {"hooks": [{"type": "command", "command": "sh \"/path/to/persona-panel/hooks/pp_guard.sh\"", "timeout": 30}]}
+       ]
+     }
+   }
+   ```
+
+   It needs a POSIX `sh` (Git Bash on Windows) and Python 3 on `PATH` as `python3`, `python` or `py`. It starts Python only for the `pp-*` agents, so other sessions pay almost nothing.
+
+The agents then run as `pp-panelist`, `pp-walker` and `pp-synthesizer`.
+
 **Don't install both ways at once.** Claude Code would see two copies of the skill. If you switch to the plugin, remove the link first:
 
 ```powershell

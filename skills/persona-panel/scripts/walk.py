@@ -7,7 +7,7 @@ command is still there for the next. Every action prints a compact "look"
 screenshot path) so a walker needs one tool call per step.
 
 Usage (SESSION is a directory, one per walker):
-  walk.py SESSION start URL [--device NAME]   (default mobile)
+  walk.py SESSION start [URL] [--device NAME]  (default mobile; no URL = the one in SESSION/start.json)
   walk.py SESSION look
   walk.py SESSION click REF          | click-text "Add to cart"
   walk.py SESSION type REF "text"    | select REF "option"
@@ -23,16 +23,15 @@ sys.dont_write_bytecode = True  # keep the skill folder read-only
 
 import json
 import os
-import re
 import socket
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
 from devices import PROFILES
+from safety import FOCUSED_KIND_JS, KIND_JS, field_refusal, format_look, goto_refusal, on_site, press_refusal, site_host
 
 # Same device sizes as capture.py and probe.py.
 DEVICES = {name: {"size": (p["viewport"]["width"], p["viewport"]["height"]), "ua": p["ua"], "touch": p["mobile"]}
@@ -107,16 +106,6 @@ def load_state(session):
     return json.loads(p.read_text())
 
 
-def site_host(url):
-    host = urlparse(url).netloc.lower()
-    return host[4:] if host.startswith("www.") else host
-
-
-def on_site(url, state):
-    """The walker may only be on the site under test (or blank pages)."""
-    return not state.get("site") or url.startswith(("about:", "data:")) or site_host(url) == state["site"]
-
-
 def guard(page, state, blocked):
     """Enforce the walker safety rules in code, not just in the prompt: block top-level navigation to other sites."""
     def handle(route):
@@ -183,13 +172,7 @@ def look(page, session, state):
     page.screenshot(path=str(shot), type="jpeg", quality=65)
     state_path(session).write_text(json.dumps(state))
     pos = page.evaluate("[Math.round(scrollY), document.documentElement.scrollHeight, innerHeight]")
-    print(f"URL: {info['url']}\nTITLE: {info['title']}\n"
-          f"SCROLL: at {pos[0]}px of a {pos[1]}px page (screen is {pos[2]}px tall, {info['scrollPct']}% seen)")
-    print(f"SCREENSHOT: {shot}")
-    print("CLICKABLE IN VIEW:")
-    print("\n".join(info["items"]) or "(nothing clickable in view)")
-    visible = info["text"]
-    print("ON-SCREEN TEXT:", visible[:700].replace("\n", " | "))
+    print(format_look(info, pos, shot, state.get("nonce")))
 
 
 def start(session, url, device):
@@ -209,7 +192,9 @@ def start(session, url, device):
     if os.name == "nt":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
-    state = {"port": port, "pid": proc.pid, "device": device, "step": 0, "site": site_host(url)}
+    start_file = session / "start.json"
+    nonce = json.loads(start_file.read_text(encoding="utf-8")).get("nonce") if start_file.exists() else None
+    state = {"port": port, "pid": proc.pid, "device": device, "step": 0, "site": site_host(url), "nonce": nonce}
     state_path(session).write_text(json.dumps(state))
     for _ in range(50):
         try:
@@ -256,13 +241,27 @@ def act(session, cmd, rest):
                 page.get_by_text(rest[0], exact=False).first.click(timeout=8000)
             elif cmd == "type":
                 loc = locate(page, rest[0])
-                kind = loc.evaluate("e => [e.type || '', e.name || '', e.autocomplete || '', e.id || '', e.placeholder || ''].join(' ').toLowerCase()")
-                if re.search(r"password|e-?mail|\btel\b|phone|mobile|cc-|card|cvv|otp|address|\bname\b", kind):
-                    raise RuntimeError(f"refused: walkers may not type into personal-data fields ({kind.strip()[:60]})")
+                # Inputs, textareas and contenteditable elements are all checked the same way.
+                refusal = field_refusal(loc.evaluate(KIND_JS), rest[1])
+                if refusal:
+                    raise RuntimeError(refusal)
                 loc.fill(rest[1], timeout=8000)
             elif cmd == "select":
-                locate(page, rest[0]).select_option(label=rest[1], timeout=8000)
+                loc = locate(page, rest[0])
+                refusal = field_refusal(loc.evaluate(KIND_JS), rest[1])
+                if refusal:
+                    raise RuntimeError(refusal)
+                loc.select_option(label=rest[1], timeout=8000)
             elif cmd == "press":
+                # Printable keys would type into whatever has focus, so the field check applies to them too.
+                for frame in page.frames:
+                    try:
+                        focused = frame.evaluate(FOCUSED_KIND_JS)
+                    except Exception:
+                        continue
+                    refusal = press_refusal(rest[0], focused)
+                    if refusal:
+                        raise RuntimeError(refusal)
                 page.keyboard.press(rest[0])
             elif cmd == "scroll":
                 h = page.viewport_size["height"] if page.viewport_size else 700
@@ -270,8 +269,9 @@ def act(session, cmd, rest):
             elif cmd == "back":
                 page.go_back(wait_until="domcontentloaded", timeout=30000)
             elif cmd == "goto":
-                if not on_site(rest[0], state):
-                    raise RuntimeError(f"refused: {rest[0]} is not on the site under test")
+                refusal = goto_refusal(rest[0], state)
+                if refusal:
+                    raise RuntimeError(refusal)
                 page.goto(rest[0], wait_until="domcontentloaded", timeout=60000)
             else:
                 sys.exit(f"Unknown command: {cmd}")
@@ -305,7 +305,17 @@ def main():
             i = rest.index("--device")
             device = rest[i + 1]
             rest = rest[:i] + rest[i + 2:]
-        start(session, rest[0], device)
+        if rest:
+            url = rest[0]
+        elif (session / "start.json").exists():
+            # prepare_briefs.py writes the start page here, so site text never appears in a walker's command line.
+            url = json.loads((session / "start.json").read_text(encoding="utf-8"))["url"]
+        else:
+            sys.exit("No start URL: pass one, or run prepare_briefs.py to write SESSION/start.json")
+        refusal = goto_refusal(url, {"site": site_host(url)})
+        if refusal:
+            sys.exit(refusal)
+        start(session, url, device)
     elif cmd == "stop":
         stop(session)
     else:

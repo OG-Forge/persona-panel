@@ -44,10 +44,10 @@ Installing from the `/plugin` panel loads the plugin straight away; after a type
 **Or let Claude do it.** Paste this into Claude Code:
 
 ```
-Read https://raw.githubusercontent.com/OG-Forge/persona-panel/v0.2.0/SETUP_WITH_CLAUDE.md and follow it to set up persona-panel for me.
+Read https://raw.githubusercontent.com/OG-Forge/persona-panel/v0.2.1/SETUP_WITH_CLAUDE.md and follow it to set up persona-panel for me.
 ```
 
-That link is pinned to the v0.2.0 release. For the latest instructions on `main`, use https://raw.githubusercontent.com/OG-Forge/persona-panel/main/SETUP_WITH_CLAUDE.md instead.
+That link is pinned to the v0.2.1 release. For the latest instructions on `main`, use https://raw.githubusercontent.com/OG-Forge/persona-panel/main/SETUP_WITH_CLAUDE.md instead.
 
 Manual install (clone and link), updating and uninstalling: [docs/INSTALL.md](docs/INSTALL.md).
 

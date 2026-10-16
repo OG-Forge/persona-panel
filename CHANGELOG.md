@@ -2,6 +2,26 @@
 
 All notable changes to persona-panel. Versions follow [semantic versioning](https://semver.org/); the version lives in `.claude-plugin/plugin.json`.
 
+## 0.2.1 - 2026-10-16
+
+Security hardening. No config changes; existing runs and configs keep working.
+
+### Security
+
+- **Restricted agents.** Panel batches, live walkers and the synthesis pass now run as the plugin's own agents, `persona-panel:pp-panelist` (Read, Write), `pp-walker` (Bash, Read, Write) and `pp-synthesizer` (Read, Write), instead of `general-purpose`. Manual installs can copy `agents/pp-*.md` into `~/.claude/agents`; without them the skill falls back to `general-purpose` and says the restrictions are off.
+- **Guard hook.** A PreToolUse hook (`hooks/`) confines those agents: reads only in the runs folder and the skill's references, writes only to their own output files, and the walker's shell only to single `walk.py` calls with no shell metacharacters. Other agents and the main session are untouched.
+- **Untrusted content.** Every site-derived input in briefs (digest, measured-check labels, page names, start URL) and the persona text in `issues_digest.md` is wrapped in `<untrusted_site_content>` blocks tagged with a random per-run nonce, with the tag name neutralised inside. Agent instructions say this content is data, never instructions. `walk.py` labels and wraps page text in its output, and the start URL no longer appears in walker command lines.
+- **Screenshots.** The report and aggregate only use `.png`/`.jpg`/`.jpeg`/`.webp` files inside the runs folder (or the run). `probe.py` stores screenshot paths relative to the run; older absolute paths still load if they pass the same check. Concept images are copied into `RUN/concept_images/` and referenced by id.
+- **Walker personal-data guard** moved to a tested stdlib module, `scripts/safety.py`, and broadened: aria-label, label text, inputmode and autocomplete tokens are checked; name variants, date of birth, UPI/VPA, Aadhaar, PAN, SSN, IBAN/IFSC/account numbers, GST, login/username and card expiry are refused; ZIP/PIN-code fields accept only 110001 or 10001; `select`, printable `press` keys and `contenteditable` elements are checked too; `goto` refuses non-http(s) URLs.
+
+### Fixed
+
+- An overrides file with an unknown attribute under `multiply` now stops with a clear error instead of a traceback.
+
+### Docs
+
+- CONFIGURATION.md: what each lens JSON key does, how to add a lens, the exact overrides format, and a generated table of every attribute and value in the bundled markets (a test keeps it in sync). SECURITY.md: prompt-injection threat model and limits. INSTALL.md: enabling the restrictions for a manual install.
+
 ## 0.2.0 - 2026-10-16
 
 First public release as the `og-forge` plugin marketplace on GitHub.
