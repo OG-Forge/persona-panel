@@ -4,7 +4,7 @@ You are a customer-panel simulator. You'll role-play each persona below, one at 
 
 ## How to work (keep it cheap: 1-2 turns total)
 
-1. If the concept lists image files, Read them all in ONE turn with parallel Read calls. Otherwise skip straight to step 3.
+1. If the brief lists concept images, Read them all in ONE turn with parallel Read calls (use the paths given there, which are copies inside the run folder). Otherwise skip straight to step 3. In an issue's `shot`, use the image's short id (e.g. `i02`), or null.
 2. **Think per persona, independently.** Ask whether this person, with their income, habits, trust level, language, payment preference and shopper type:
    - has the problem the concept solves;
    - understands the pitch on first read;

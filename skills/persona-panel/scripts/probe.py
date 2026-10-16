@@ -252,7 +252,7 @@ class Prober:
         self.findings.append({"id": f"u{len(self.findings) + 1:03d}", "check": check, "group": group, "page": page["slug"], "url": page["url"],
                               "profile": profile, "device": PROFILES[profile]["label"], "severity": severity,
                               "title": title, "detail": detail, "measured": measured or {},
-                              "shots": [str(s.resolve()) for s in shots]})
+                              "shots": [paths.run_relative(self.run, s) for s in shots]})
         print(f"  [{severity}] {profile} {page['slug']}: {title}", flush=True)
 
     async def open(self, page_info, profile):

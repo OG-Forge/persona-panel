@@ -18,6 +18,8 @@ sys.dont_write_bytecode = True  # keep the skill folder read-only
 
 import argparse
 import json
+import re
+import shutil
 from pathlib import Path
 
 import paths
@@ -149,6 +151,47 @@ def probe_facts(run, profile):
     return "\n".join([header, *mine[:25], ""])
 
 
+IMAGES_HEADING = re.compile(r"^#{1,6}\s*images?\s*:?\s*$", re.I)
+
+
+def split_concept_images(concept):
+    """(concept text without its '## Images' section, the image paths listed in that section)."""
+    keep, images, in_images = [], [], False
+    for line in concept.splitlines():
+        if re.match(r"^#{1,6}\s", line):
+            in_images = bool(IMAGES_HEADING.match(line.strip()))
+            if in_images:
+                continue
+        if not in_images:
+            keep.append(line)
+            continue
+        item = re.sub(r"^\s*(?:[-*+]|\d+[.)])\s+", "", line).strip().strip("`'\"<>")
+        if item:
+            images.append(item)
+    return "\n".join(keep).strip() + "\n", images
+
+
+def copy_concept_images(run, listed):
+    """Copy the concept's images into RUN/concept_images/ as i01.png, i02.jpg...; returns {id: copy path}.
+    Panelists (and the report) only ever open files inside the run, never the user's originals."""
+    out = run / "concept_images"
+    if out.exists():
+        shutil.rmtree(out)
+    ids = {}
+    for item in listed:
+        src = Path(item).expanduser()
+        src = src if src.is_absolute() else run / src
+        if src.suffix.lower() not in paths.IMAGE_SUFFIXES or not src.is_file():
+            print(f"Skipped concept image (not a .png/.jpg/.jpeg/.webp file): {item}")
+            continue
+        out.mkdir(exist_ok=True)
+        key = f"i{len(ids) + 1:02d}"
+        dest = out / f"{key}{src.suffix.lower()}"
+        shutil.copyfile(src, dest)
+        ids[key] = str(dest)
+    return ids
+
+
 def main():
     cfg = paths.config_or_exit()
     ap = argparse.ArgumentParser()
@@ -172,7 +215,8 @@ def main():
     focus = f"\n## The owner especially wants to know\n{args.focus}\n" if args.focus else ""
 
     if mode == "concept":
-        concept = (run / "concept.md").read_text(encoding="utf-8")
+        concept, listed = split_concept_images((run / "concept.md").read_text(encoding="utf-8"))
+        concept_ids = copy_concept_images(run, listed)
         panel_rules = (REF / "panelist-concept.md").read_text(encoding="utf-8")
     else:
         manifest, digest = load_capture(run)
@@ -211,6 +255,11 @@ def main():
         parts = [f"# Persona panel brief {b['batch_id']} ({len(b['persona_ids'])} personas)", "", panel_rules, focus]
         if mode == "concept":
             parts += ["## The concept being evaluated", concept]
+            (run / "briefs" / f"{b['batch_id']}_images.json").write_text(json.dumps(concept_ids, indent=1), encoding="utf-8")
+            if concept_ids:
+                parts += ["## Concept images — Read ALL of these in ONE turn (parallel Read calls)",
+                          "In an issue's `shot`, use the short id in brackets (e.g. i02), not the path.",
+                          *[f"- [{k}] {v}" for k, v in concept_ids.items()], ""]
         else:
             imgs = core_images(manifest, shot_profile, run, args.max_images)
             ids = {f"i{n + 1:02d}": path for n, path in enumerate(imgs)}

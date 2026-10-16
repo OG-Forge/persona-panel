@@ -25,8 +25,9 @@ SEV_WEIGHT = {"blocker": 3, "major": 2, "minor": 1}
 OUTCOMES = ("buy", "maybe", "no")
 
 
-def load_results(run):
+def load_results(run, roots=None):
     results, problems = {}, []
+    roots = paths.image_roots(run) if roots is None else roots
     for f in sorted((run / "results").glob("*.json")):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
@@ -44,28 +45,31 @@ def load_results(run):
             bases = [run / "walk" / f.stem[len("live_"):], run] if f.name.startswith("live_") else [run]
             for i in r.get("issues") or []:
                 if isinstance(i, dict):
-                    i["shot"] = resolve_shot(i.get("shot"), images, bases)
+                    i["shot"] = resolve_shot(i.get("shot"), images, bases, roots)
             results[r["id"]] = r
     return results, problems
 
 
-def resolve_shot(shot, images, bases=()):
-    """An issue's screenshot: a brief image id (i03), a measured-check id (u004) or a walker's step path."""
+def resolve_shot(shot, images, bases=(), roots=()):
+    """An issue's screenshot: a brief image id (i03), a measured-check id (u004) or a walker's step path.
+
+    Paths are only accepted when they resolve to an image inside `roots` (the runs folder and the run):
+    result files are agent output, and a hostile site could steer an agent into naming any file."""
     if not shot or not isinstance(shot, str):
         return None
     shot = shot.strip().strip("[]`'\" ")
     m = re.fullmatch(r"[iI](\d+)", shot)
     if m:
-        return images.get(f"i{int(m.group(1)):02d}")
+        found = paths.safe_image(images.get(f"i{int(m.group(1)):02d}"), roots)
+        return str(found) if found else None
     m = re.fullmatch(r"[uU](\d+)", shot)
     if m:
         return f"u{int(m.group(1)):03d}"
     p = Path(shot)
-    if p.is_absolute():
-        return str(p) if p.exists() else None
-    for base in bases:
-        if (base / p).exists():
-            return str((base / p).resolve())
+    for candidate in [p] if p.is_absolute() else [base / p for base in bases]:
+        found = paths.safe_image(candidate, roots)
+        if found:
+            return str(found)
     return None
 
 
@@ -95,8 +99,9 @@ def clean(r):
     return r
 
 
-def group_probes(findings):
-    """One entry per problem: the same section too tall on 4 devices and 3 pages is one group."""
+def group_probes(findings, run=None, roots=()):
+    """One entry per problem: the same section too tall on 4 devices and 3 pages is one group.
+    Screenshot paths (relative to the run since 0.2.1) come back absolute, and only if they are safe images."""
     groups = {}
     for f in findings:
         g = groups.setdefault(f.get("group", f["id"]), {"id": f["id"], "check": f["check"], "severity": f["severity"],
@@ -107,8 +112,10 @@ def group_probes(findings):
         if f["page"] not in g["pages"]:
             g["pages"].append(f["page"])
         g["finding_ids"].append(f["id"])
+        shots = f["shots"] if run is None else [
+            str(s) for s in (paths.safe_image(paths.run_file(run, x), roots) for x in f["shots"]) if s]
         if len(g["shots"]) < 2:
-            g["shots"] += f["shots"][:2 - len(g["shots"])]
+            g["shots"] += shots[:2 - len(g["shots"])]
         if SEV_WEIGHT.get(f["severity"], 0) > SEV_WEIGHT.get(g["severity"], 0):
             g["severity"] = f["severity"]
     return sorted(groups.values(), key=lambda g: (-SEV_WEIGHT.get(g["severity"], 0), -len(g["devices"]) * len(g["pages"])))
@@ -145,7 +152,8 @@ def main():
 
     personas = {p["id"]: p for p in json.loads((run / "personas.json").read_text(encoding="utf-8"))}
     batches = json.loads((run / "batches.json").read_text(encoding="utf-8"))
-    results, problems = load_results(run)
+    roots = paths.image_roots(run)
+    results, problems = load_results(run, roots)
     results = {pid: clean(r) for pid, r in results.items() if pid in personas}
     missing = sorted(set(personas) - set(results))
     rows = list(results.values())
@@ -187,7 +195,8 @@ def main():
             issues.append({"pid": r["id"], **{k: i.get(k, "") for k in ("where", "category", "severity", "what", "fix")},
                            "shot": shot_id(i.get("shot")), "profile": personas[r["id"]].get("view_profile", "")})
     probes_path = run / "probes" / "probes.json"
-    probe_groups = group_probes(json.loads(probes_path.read_text(encoding="utf-8"))["findings"]) if probes_path.exists() else []
+    probe_groups = (group_probes(json.loads(probes_path.read_text(encoding="utf-8"))["findings"], run, roots)
+                    if probes_path.exists() else [])
     buckets = defaultdict(list)
     for i in issues:
         buckets[(i["where"], i["category"])].append(i)

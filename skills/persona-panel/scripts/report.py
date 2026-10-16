@@ -92,14 +92,19 @@ def as_list(v):
 
 
 _IMG_CACHE = {}
+_ROOTS = []  # folders screenshots may come from (set by render: the runs folder and the run)
 
 
 def img_uri(path, max_w=960):
-    """Embed a screenshot (downscaled JPEG) so the report stays one shareable file."""
+    """Embed a screenshot (downscaled JPEG) so the report stays one shareable file.
+    Only .png/.jpg/.jpeg/.webp files inside the runs folder or the run are embedded."""
     if path in _IMG_CACHE:
         return _IMG_CACHE[path]
+    safe = paths.safe_image(path, _ROOTS)
+    if not safe:
+        return None
     try:
-        img = Image.open(path).convert("RGB")
+        img = Image.open(safe).convert("RGB")
     except (OSError, ValueError):
         return None
     if img.width > max_w:
@@ -139,6 +144,7 @@ def bug_text(title, severity, devices, pages, body, fix, paths):
 
 
 def render(run, title, subject):
+    _ROOTS[:] = paths.image_roots(run)
     personas = {p["id"]: p for p in json.loads((run / "personas.json").read_text(encoding="utf-8"))}
     agg = json.loads((run / "aggregate.json").read_text(encoding="utf-8"))
     syn_path = run / "synthesis.json"
@@ -167,11 +173,16 @@ def render(run, title, subject):
 
     def resolve(ref):
         """s12 -> its screenshot; u004 -> that measured check's annotated screenshots."""
+        if not isinstance(ref, str):
+            return []
         if ref in shot_map:
-            return [shot_map[ref]]
-        if ref in probe_findings:
-            return probe_findings[ref]["shots"]
-        return [ref] if ref and Path(ref).exists() else []
+            candidates = [shot_map[ref]]
+        elif ref in probe_findings:
+            candidates = [paths.run_file(run, s) for s in probe_findings[ref]["shots"]]
+        else:
+            candidates = [ref]
+        # Only images inside the runs folder or the run are ever shown, linked or embedded.
+        return [str(p) for p in (paths.safe_image(c, _ROOTS) for c in candidates) if p]
 
     def theme_html(i, t):
         ids = [pid for pid in as_list(t.get("persona_ids")) if pid in personas]
