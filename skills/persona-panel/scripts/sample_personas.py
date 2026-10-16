@@ -18,6 +18,9 @@ overrides.json (all keys optional):
   {"set":      {"age_band": {"18-24": 50, "25-34": 40, "35-44": 10, "45-54": 0, "55+": 0}},
    "multiply": {"device": {"desktop_laptop": 0.5}},
    "notes":    "Brand targets 18-30 streetwear fans"}
+"set" replaces an attribute's weights, "multiply" scales the listed values (set first), and
+"notes" is free text the script ignores. An unknown attribute stops the run. Attribute keys
+and values for the bundled markets: docs/CONFIGURATION.md, "Attribute reference".
 """
 import sys
 
@@ -156,6 +159,8 @@ def apply_overrides(market, overrides):
             sys.exit(f"Override for unknown attribute '{key}'")
         attrs[key]["values"] = dict(values)
     for key, mults in overrides.get("multiply", {}).items():
+        if key not in attrs:
+            sys.exit(f"Override for unknown attribute '{key}'")
         for v, m in mults.items():
             attrs[key]["values"][v] = attrs[key]["values"].get(v, 0) * m
 

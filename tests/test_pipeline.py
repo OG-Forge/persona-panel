@@ -128,3 +128,32 @@ def test_aggregate_and_report(concept_run, run_script):
     assert "Monthly price feels high" in html
     assert "Price is the sticking point" in html
     assert "report.html" in r.stdout
+
+
+HOSTILE = '<script>alert(1)</script>"><img src=x onerror=alert(2)>'
+
+
+def test_report_escapes_hostile_result_strings(concept_run, run_script):
+    batches = read_json(concept_run / "batches.json")
+    pids = [pid for b in batches["panel"] for pid in b["persona_ids"]]
+    rows = []
+    for k, pid in enumerate(pids):
+        r = fake_result(pid, k)
+        r.update(outcome=HOSTILE if k == 0 else r["outcome"], quote=HOSTILE, would_change_mind=HOSTILE,
+                 journey=[HOSTILE], reached=HOSTILE)
+        r["issues"][0].update(what=HOSTILE, where=HOSTILE, severity=HOSTILE, fix=HOSTILE)
+        rows.append(r)
+    write_json(concept_run / "results" / "b01.json", rows[:10])
+    write_json(concept_run / "results" / "live_x.json", rows[10:])
+    run_script("aggregate.py", "--run", concept_run)
+    write_json(concept_run / "synthesis.json", {
+        "headline": HOSTILE, "summary": [HOSTILE], "quick_wins": [HOSTILE], "segment_insights": [HOSTILE],
+        "open_questions": [{"title": HOSTILE}], "strengths": [{"title": HOSTILE, "persona_ids": pids[:1]}],
+        "themes": [{"title": HOSTILE, "severity": HOSTILE, "where": HOSTILE, "persona_ids": pids[:3], "devices": [HOSTILE],
+                    "who": HOSTILE, "evidence": HOSTILE, "fix": HOSTILE, "effort": HOSTILE, "impact": HOSTILE,
+                    "shots": [HOSTILE], "probe_ids": [HOSTILE]}]})
+    run_script("report.py", "--run", concept_run, "--title", HOSTILE, "--subject", HOSTILE)
+    html = (concept_run / "report.html").read_text(encoding="utf-8")
+    assert "<script>alert" not in html and "<img src=x" not in html and 'onerror=alert(2)>' not in html
+    assert html.count("<script>") == 1, "only the report's own script block"
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html

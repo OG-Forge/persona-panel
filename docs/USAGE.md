@@ -54,7 +54,7 @@ Your concept is written to the run folder verbatim, plus any facts you gave (pri
 /persona-panel:persona-panel https://your-site.com --lens ux
 ```
 
-A lens changes the panel's instructions, the outcome words (for example "smooth / some friction / frustrating" instead of "buy / maybe / no") and the scores in the report.
+A lens changes the panel's instructions, the outcome words (for example "smooth / some friction / frustrating" instead of "buy / maybe / no") and the scores in the report. It works in concept mode too. If your config sets a lens, say "full review" (`--lens default`; `full` and `none` mean the same) to get the full customer review for one run. To add your own lens, see [CONFIGURATION.md](CONFIGURATION.md#lenses).
 
 ## Focus questions
 
