@@ -7,7 +7,7 @@ command is still there for the next. Every action prints a compact "look"
 screenshot path) so a walker needs one tool call per step.
 
 Usage (SESSION is a directory, one per walker):
-  walk.py SESSION start URL [--device NAME]   (default mobile)
+  walk.py SESSION start [URL] [--device NAME]  (default mobile; no URL = the one in SESSION/start.json)
   walk.py SESSION look
   walk.py SESSION click REF          | click-text "Add to cart"
   walk.py SESSION type REF "text"    | select REF "option"
@@ -309,7 +309,17 @@ def main():
             i = rest.index("--device")
             device = rest[i + 1]
             rest = rest[:i] + rest[i + 2:]
-        start(session, rest[0], device)
+        if rest:
+            url = rest[0]
+        elif (session / "start.json").exists():
+            # prepare_briefs.py writes the start page here, so site text never appears in a walker's command line.
+            url = json.loads((session / "start.json").read_text(encoding="utf-8"))["url"]
+        else:
+            sys.exit("No start URL: pass one, or run prepare_briefs.py to write SESSION/start.json")
+        refusal = goto_refusal(url, {"site": site_host(url)})
+        if refusal:
+            sys.exit(refusal)
+        start(session, url, device)
     elif cmd == "stop":
         stop(session)
     else:

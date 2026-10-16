@@ -16,6 +16,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import paths
+from safety import new_nonce, untrusted_rule, wrap_untrusted
 
 SCORE_KEYS = ("clarity", "trust", "appeal", "ease", "value")
 SEGMENT_KEYS = ("age_band", "gender", "location_tier", "region", "income", "device", "network", "language",
@@ -214,10 +215,12 @@ def main():
     (run / "aggregate.json").write_text(json.dumps(agg, indent=1, ensure_ascii=False), encoding="utf-8")
 
     # Compact digest for the synthesizer: grouped by (where, category), one line per issue.
-    lines = [f"# Issue digest: {len(issues)} issues from {len(rows)} personas",
-             f"Overall: {OUTCOMES[0]} {overall['buy_pct']}% / {OUTCOMES[1]} {overall['maybe_pct']}% / {OUTCOMES[2]} {overall['no_pct']}%; "
-             f"avg scores {overall['scores']}; understood offer {overall['understood_offer_pct']}%; left at {overall['left_at']}",
-             "Line format: pid|screen|severity|what => fix [screenshot id]", ""]
+    # Everything below the header is persona-written or quotes the site, so it goes inside one untrusted block.
+    nonce = new_nonce()
+    head = [f"# Issue digest: {len(issues)} issues from {len(rows)} personas",
+            "Line format: pid|screen|severity|what => fix [screenshot id]", "", untrusted_rule(nonce), ""]
+    lines = [f"Overall: {OUTCOMES[0]} {overall['buy_pct']}% / {OUTCOMES[1]} {overall['maybe_pct']}% / {OUTCOMES[2]} {overall['no_pct']}%; "
+             f"avg scores {overall['scores']}; understood offer {overall['understood_offer_pct']}%; left at {overall['left_at']}", ""]
     if probe_groups:
         lines.append(f"## MEASURED UX CHECKS (real browser, facts; {len(probe_groups)} problem groups)")
         lines += [f"{g['id']}|{g['severity']}|{', '.join(g['devices'])}|pages: {', '.join(g['pages'])}| {g['title']}. {g['detail']}"
@@ -233,7 +236,7 @@ def main():
     lines += [f"{n}x {t}" for t, n in liked.most_common(40)]
     lines += ["", "## What would change their mind (no/maybe personas)"]
     lines += [f"{r['id']}: {r.get('would_change_mind', '')}" for r in rows if r["outcome"] != OUTCOMES[0] and r.get("would_change_mind")]
-    (run / "issues_digest.md").write_text("\n".join(lines), encoding="utf-8")
+    (run / "issues_digest.md").write_text("\n".join(head + [wrap_untrusted("\n".join(lines), nonce)]), encoding="utf-8")
 
     print(f"{len(rows)}/{len(personas)} personas have results; {len(issues)} issues in {len(buckets)} buckets.")
     print(f"Outcome: {OUTCOMES[0]} {overall['buy_pct']}% / {OUTCOMES[1]} {overall['maybe_pct']}% / {OUTCOMES[2]} {overall['no_pct']}%")
