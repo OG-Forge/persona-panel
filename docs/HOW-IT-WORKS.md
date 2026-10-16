@@ -58,6 +58,10 @@ Writes one self-contained brief per batch: instructions (`references/panelist-si
 
 The orchestrating Claude dispatches `wave_size` agents per message on `panel_model` and waits for the wave before sending the next. After the first wave it spot-checks one result file before spending more.
 
+The agents are the plugin's own restricted types: `persona-panel:pp-panelist` (Read, Write), `persona-panel:pp-walker` (Bash, Read, Write) and `persona-panel:pp-synthesizer` (Read, Write), defined in `agents/`. Their frontmatter models are defaults; SKILL.md passes the configured models on every call. A manual install can copy them into `~/.claude/agents/` (then they are `pp-*`); otherwise SKILL.md falls back to `general-purpose` and says the restrictions are off.
+
+`hooks/hooks.json` registers a PreToolUse hook, `hooks/pp_guard.sh` → `hooks/pp_guard.py`, that runs before every tool call. It reads `agent_type` from the hook input and does nothing unless it is a pp-* agent; for those it limits reads to the runs folder and the skill's references, writes to each agent's own output files, and the walker's shell to single `walk.py` calls. Everything site-derived in briefs sits inside nonce-tagged `<untrusted_site_content>` blocks. Details and limits: [SECURITY.md](../SECURITY.md#prompt-injection).
+
 Live walkers use `walk.py`, a small stateful browser CLI: each walker gets its own headless Chromium kept alive over CDP between commands, so a cart drawer opened by one command is still there for the next. Every command prints the URL, scroll position, a numbered list of clickable things (including inside iframes and shadow DOM) and a screenshot path, so the walker usually works from text and reads screenshots only when judging visuals. Budget: at most 22 commands.
 
 ### 6. Aggregate, synthesise, report
@@ -69,6 +73,8 @@ Live walkers use `walk.py`, a small stateful browser CLI: each walker gets its o
 ```
 .claude-plugin/plugin.json          plugin manifest (version lives here only)
 .claude-plugin/marketplace.json     marketplace "og-forge", source "./"
+agents/pp-*.md                      restricted panelist, walker and synthesizer agents
+hooks/hooks.json, pp_guard.*        PreToolUse guard for the pp-* agents (sh launcher + stdlib Python)
 skills/persona-panel/
   SKILL.md                          orchestrator instructions (what Claude does)
   data/markets/*.json               bundled markets
@@ -82,6 +88,7 @@ skills/persona-panel/
     prepare_briefs.py               briefs (stdlib)
     aggregate.py                    counting (stdlib)
     report.py                       HTML report (Pillow)
+    safety.py                       walker field/URL checks, untrusted-content wrapping (stdlib)
     capture.py, probe.py, walk.py   browser work (Playwright, Pillow)
     devices.py                      screen sizes and user agents
 tests/                              offline pytest suite (no browser, network or LLM)

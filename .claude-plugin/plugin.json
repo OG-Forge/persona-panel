@@ -1,6 +1,6 @@
 {
   "name": "persona-panel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Simulated customer panel of 100+ diverse personas that reviews a live website or a product concept, plus free automated UX checks across phone, tablet, laptop and desktop, and returns a prioritised fix list with screenshots.",
   "author": {"name": "Ojas Goel"},
   "homepage": "https://github.com/OG-Forge/persona-panel",
