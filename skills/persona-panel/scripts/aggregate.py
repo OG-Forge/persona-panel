@@ -5,12 +5,17 @@ Usage: python aggregate.py --run RUN_DIR
 Writes RUN_DIR/aggregate.json and RUN_DIR/issues_digest.md, and prints any
 personas with missing or invalid results (re-run just their batch).
 """
+import sys
+
+sys.dont_write_bytecode = True  # keep the skill folder read-only
+
 import argparse
 import json
 import re
-import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+
+import paths
 
 SCORE_KEYS = ("clarity", "trust", "appeal", "ease", "value")
 SEGMENT_KEYS = ("age_band", "gender", "location_tier", "region", "income", "device", "network", "language",
@@ -130,7 +135,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
     args = ap.parse_args()
-    run = Path(args.run)
+    run = paths.run_dir_arg(args.run)
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     # A lens (e.g. visual) brings its own outcome words and score keys; buy_pct etc. hold its 1st/2nd/3rd outcome.
     global OUTCOMES, SCORE_KEYS

@@ -1,0 +1,53 @@
+name: New market
+description: Propose a built-in market profile (an audience the personas are sampled from).
+labels: ["market"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        You can always keep a market for yourself in `~/.persona-panel/markets/<name>.json` (see skills/persona-panel/references/custom-market.md). Propose a built-in one when it would be useful to many people.
+  - type: input
+    id: name
+    attributes:
+      label: Market name
+      placeholder: uk-shoppers
+    validations:
+      required: true
+  - type: textarea
+    id: audience
+    attributes:
+      label: Who it represents
+      description: Country or region, kind of customer, what they're shopping for or evaluating.
+    validations:
+      required: true
+  - type: textarea
+    id: attributes
+    attributes:
+      label: Attributes and weights
+      description: Which attributes differ from india.json / global.json, with weights. Paste a draft JSON if you have one.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Where the weights come from
+      description: Links to data (surveys, analytics, reports), or say plainly that they're informed guesses.
+    validations:
+      required: true
+  - type: dropdown
+    id: modes
+    attributes:
+      label: Modes
+      description: Site mode needs device, network, patience, traffic_source, context and accessibility_need.
+      options:
+        - Site and concept
+        - Concept only
+    validations:
+      required: true
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to open a pull request with the market file

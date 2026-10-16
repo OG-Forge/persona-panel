@@ -9,10 +9,18 @@ Usage:
   python prepare_briefs.py --run RUN_DIR [--max-images 10] [--focus "questions the owner cares about"]
 Site mode expects RUN_DIR/capture/ (from capture.py). Concept mode expects RUN_DIR/concept.md
 (plus optional images listed in it).
+--lens and --focus default to the config's "lens" and "default_focus" (config.py show);
+--lens default forces the full customer review.
 """
+import sys
+
+sys.dont_write_bytecode = True  # keep the skill folder read-only
+
 import argparse
 import json
 from pathlib import Path
+
+import paths
 
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "references"
@@ -142,16 +150,19 @@ def probe_facts(run, profile):
 
 
 def main():
+    cfg = paths.config_or_exit()
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
     ap.add_argument("--max-images", type=int, default=10)
-    ap.add_argument("--focus", default="", help="Specific questions the owner wants the panel to answer")
+    ap.add_argument("--focus", default=cfg["default_focus"], help="Specific questions the owner wants the panel to answer")
     ap.add_argument("--python", default="python", help="Python executable walkers should use for walk.py")
-    ap.add_argument("--lens", default="", help="Focus lens from references/lenses (e.g. visual); default = full customer review")
+    ap.add_argument("--lens", default=cfg["lens"],
+                    help="Focus lens from references/lenses (e.g. ux, visual); 'default' = full customer review")
     ap.add_argument("--only", nargs="*", help="Write redo briefs for just these panel persona ids (missing results)")
     args = ap.parse_args()
+    args.lens = paths.normalize_lens(args.lens)
 
-    run = Path(args.run).resolve()
+    run = paths.run_dir_arg(args.run)
     personas = {p["id"]: p for p in json.loads((run / "personas.json").read_text(encoding="utf-8"))}
     batches = json.loads((run / "batches.json").read_text(encoding="utf-8"))
     mode = batches.get("mode", "site")

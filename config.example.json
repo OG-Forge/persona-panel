@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to ~/.persona-panel/config.json (user) or ./.persona-panel.json (project), or create one with: python skills/persona-panel/scripts/config.py init. Every key is optional and keys you leave out use the built-in defaults (shown here), so it is best to keep only the keys you change. Keys starting with '_' are ignored. Precedence: defaults < user config < project config < command-line flags.",
+  "_runs_dir": "runs_dir (left out on purpose): by default runs go to <home>/runs, where <home> is $PERSONA_PANEL_HOME or ~/.persona-panel. To move them, add \"runs_dir\": \"~/persona-panel-runs\" (relative paths resolve against this file's folder).",
+  "market": "india",
+  "n": 100,
+  "live": 4,
+  "lens": "",
+  "seed": 7,
+  "min_per_screen": 10,
+  "batch_size": 10,
+  "wave_size": 3,
+  "panel_model": "haiku",
+  "synthesis_model": "sonnet",
+  "default_focus": ""
+}

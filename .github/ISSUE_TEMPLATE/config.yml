@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/OG-Forge/persona-panel/discussions
+    about: Ask how to use or configure persona-panel, or discuss an idea before filing it.
+  - name: Report a security vulnerability
+    url: https://github.com/OG-Forge/persona-panel/security/advisories/new
+    about: Report security problems privately. Don't open a public issue.

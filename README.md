@@ -1,65 +1,87 @@
 # persona-panel
 
-A Claude Code skill that runs a **simulated customer panel of 100+ diverse personas** against a live website or an idea, and turns their reactions into a prioritised fix list. It's built to cost as little as possible: Python does the capture, sampling and counting, small Haiku agents play the personas in batches, and they run in waves rather than all at once.
+[![CI](https://github.com/OG-Forge/persona-panel/actions/workflows/ci.yml/badge.svg)](https://github.com/OG-Forge/persona-panel/actions/workflows/ci.yml)
 
-## What it does
+A Claude Code plugin that runs a **simulated customer panel of 100+ diverse personas** against a live website or a product idea, and turns their reactions into a prioritised fix list with screenshots.
 
-1. **Sample the panel.** `sample_personas.py` draws personas from weighted demographic distributions with coherence rules, covering age, city tier or region, income, device, network, language, payment habits, shopper type, trust, patience and accessibility needs. It guarantees every segment appears at least once. Distributions are sampled rather than invented by an LLM, because LLM-written personas collapse into the same upbeat, middle-of-the-road customer.
-2. **Capture the site once** (site mode). `capture.py` crawls the pages a shopper would see and saves, for mobile and desktop:
-   - screenshot slices;
-   - a facts digest: load times on a throttled budget phone, trust signals, prices, missing alt text, tiny tap targets, console errors, popups.
-3. **Brief the panel.** `prepare_briefs.py` writes one self-contained brief per batch of ~10 personas. Each brief holds the persona cards, the exact screens each persona would see given their entry point and patience, the digest, and the output schema.
-4. **Run the agents.** Haiku agents role-play each batch in about 3 turns and write one JSON file. A few **live walkers** browse the real site through `walk.py`, a stateful headless Chrome CLI that also sees iframes and shadow-DOM cart drawers. Walkers go up to the first checkout screen and never enter personal data.
-5. **Aggregate and synthesise.** `aggregate.py` computes outcomes and per-segment breakdowns. One synthesis agent clusters the issues into themes, and `report.py` renders a self-contained HTML report.
+- **Site mode:** give it a URL. A real browser captures the site on phone, tablet, laptop and desktop, runs free automated UX checks (section and card fit, in-page jumps, Back-button scroll restore, sticky overlays, overflow), and a few live walkers browse it. Then the panel reviews what each persona would actually see.
+- **Concept mode:** give it an idea, pitch, pricing or mockup images. No browser needed.
 
-**Concept mode** skips the browser. Personas react to a written idea, pitch, pricing or mockup images.
+Personas are sampled from weighted demographic distributions (age, city tier or region, income, device, network, language, payment habits, shopper type, patience, accessibility needs), not invented by an LLM, so minority segments don't get dropped. Built-in markets: `india` (default) and `global`. You can add your own.
 
-## Install
+It is built to be cheap: Python does the capture, sampling and counting; small Haiku agents play about 10 personas each, in waves; one Sonnet pass writes the synthesis.
 
-```bash
-git clone <this repo> "D:/OG Forge/persona-panel"
-python "D:/OG Forge/persona-panel/skills/persona-panel/scripts/setup_env.py"   # venv + Playwright + Chromium
-```
+## What you get
 
-Then make the skill visible to Claude Code by linking it into your skills folder.
+A self-contained `report.html` in the run folder:
 
-Windows:
+- a one-line headline and a short summary;
+- 6-14 themes ranked by impact, each with the personas who hit it, the segments most affected, the screens affected, a concrete fix, and 1-3 evidence screenshots (click to enlarge, "Copy as bug" button);
+- the measured UX checks per screen size, kept separate from persona opinions;
+- outcomes and scores broken down by segment.
 
-```powershell
-New-Item -ItemType Junction -Path "$HOME\.claude\skills\persona-panel" -Target "D:\OG Forge\persona-panel\skills\persona-panel"
-```
+## Quick start
 
-macOS/Linux:
-
-```bash
-ln -s "<repo>/skills/persona-panel" ~/.claude/skills/persona-panel
-```
-
-## Use
-
-In Claude Code:
+Needs Claude Code and Python 3.10+. Inside Claude Code:
 
 ```
-/persona-panel https://your-site.com
-/persona-panel concept: a subscription box of themed party kits for kids' birthdays, ₹1,999/month
+/plugin marketplace add OG-Forge/persona-panel
+/plugin install persona-panel@og-forge
 ```
 
-Runs land in `skills/persona-panel/runs/<slug>-<timestamp>/`, which is git-ignored. Open `report.html` there.
+On Claude Code 2.1.275 or later this also works in one step:
+
+```
+/plugin install persona-panel --marketplace OG-Forge/persona-panel
+```
+
+Installing from the `/plugin` panel loads the plugin straight away; after a typed install command, run `/reload-plugins` (or start a new session). Then run the one-time setup. It asks a few questions, then creates a Python venv with Playwright and Pillow in `~/.persona-panel/` and downloads Chromium into Playwright's own browser cache:
+
+```
+/persona-panel:persona-panel setup
+```
+
+**Or let Claude do it.** Paste this into Claude Code:
+
+```
+Read https://raw.githubusercontent.com/OG-Forge/persona-panel/v0.2.0/SETUP_WITH_CLAUDE.md and follow it to set up persona-panel for me.
+```
+
+That link is pinned to the v0.2.0 release. For the latest instructions on `main`, use https://raw.githubusercontent.com/OG-Forge/persona-panel/main/SETUP_WITH_CLAUDE.md instead.
+
+Manual install (clone and link), updating and uninstalling: [docs/INSTALL.md](docs/INSTALL.md).
+
+## First runs
+
+```
+/persona-panel:persona-panel https://your-site.com
+/persona-panel:persona-panel https://your-site.com --lens ux
+/persona-panel:persona-panel concept: a subscription box of themed party kits for kids' birthdays, ₹1,999/month
+```
+
+Plain language works too: "run a persona panel on https://your-site.com with 60 US shoppers". If you installed manually, the command is `/persona-panel` instead of `/persona-panel:persona-panel`.
+
+Runs go to `~/.persona-panel/runs/<slug>-<timestamp>/`. Open `report.html` there.
 
 ## Rough cost
 
-For 100 personas: 10-11 Haiku batch agents (each reads ~10 small screenshots plus an ~8k-token brief and writes one file), 3 Haiku live walkers (≤20 browser steps each), and 1 Sonnet synthesis pass. Set `--live 0` to skip the walkers.
+For 100 personas with the defaults: 10-11 Haiku panel agents (each reads ~10 small screenshots and an ~8k-token brief, writes one file), 4 Haiku live walkers (at most 22 browser commands each), and 1 Sonnet synthesis pass. The capture and UX checks use no tokens. Use `live: 0` or a smaller `n` to spend less; see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#models-and-cost).
 
-## Markets
+## Docs
 
-- `india` (default): Indian online shoppers, weighted toward mobile, tier-2/3 cities and COD-heavy payment.
-- `global`: English-speaking international shoppers.
-- Narrow an existing market with an overrides file, or write a custom market for any audience (`skills/persona-panel/references/custom-market.md`).
+- [docs/INSTALL.md](docs/INSTALL.md): plugin and manual install, updates, uninstall, troubleshooting
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md): config files, every key, markets, overrides, lenses, worked examples
+- [docs/USAGE.md](docs/USAGE.md): site vs concept mode, lenses, focus questions, re-runs, reading the report
+- [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md): pipeline and architecture
+- [SETUP_WITH_CLAUDE.md](SETUP_WITH_CLAUDE.md): setup instructions written for an AI agent
+- [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CHANGELOG.md](CHANGELOG.md)
 
 ## Caveat
 
-These are simulated customers. They're good at surfacing friction, confusion and missing information, but they don't predict real conversion. Validate the top themes with real people.
+These are simulated customers. They are good at surfacing friction, confusion and missing information, but they don't predict real conversion. Validate the top themes with real people.
+
+Running capture, UX checks and live walkers against a website is your responsibility: only point it at sites you own or are allowed to test.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

@@ -1,0 +1,12 @@
+{
+  "name": "og-forge",
+  "owner": {"name": "OG Forge"},
+  "description": "Claude Code plugins from OG Forge.",
+  "plugins": [
+    {
+      "name": "persona-panel",
+      "source": "./",
+      "description": "Simulated customer panel of 100+ diverse personas that reviews a website or concept and returns a prioritised fix list with screenshots."
+    }
+  ]
+}

@@ -11,10 +11,13 @@ Usage:
       [--max-pages 12] [--profiles mobile,desktop] [--extra-urls URL ...]
       [--max-slices 8]
 """
+import sys
+
+sys.dont_write_bytecode = True  # keep the skill folder read-only
+
 import argparse
 import json
 import re
-import sys
 import time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -24,6 +27,7 @@ import asyncio
 from PIL import Image
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
+import paths
 from devices import PROFILES, context_options
 
 # Device sizes live in devices.py (shared with probe.py and walk.py).
@@ -334,7 +338,7 @@ def digest_entry(slug, kind, d):
 
 
 async def run_capture(args):
-    run = Path(args.run)
+    run = paths.run_dir_arg(args.run)
     cap = run / "capture"
     cap.mkdir(parents=True, exist_ok=True)
     profiles = [p.strip() for p in args.profiles.split(",") if p.strip()]

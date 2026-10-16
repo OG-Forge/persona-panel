@@ -14,11 +14,14 @@ Usage:
       [--pages 5] [--interaction-profiles mobile,tablet,laptop]
 Needs RUN_DIR/capture/manifest.json (from capture.py). Writes RUN_DIR/probes/probes.json and probes.md.
 """
+import sys
+
+sys.dont_write_bytecode = True  # keep the skill folder read-only
+
 import argparse
 import asyncio
 import json
 import re
-import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -26,6 +29,7 @@ from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
 from PIL import Image, ImageDraw, ImageFont
 
+import paths
 from devices import PROFILES, context_options
 
 
@@ -513,7 +517,7 @@ def write_digest(run, findings, summary):
 
 
 async def main_async(args):
-    run = Path(args.run).resolve()
+    run = paths.run_dir_arg(args.run)
     manifest = json.loads((run / "capture" / "manifest.json").read_text(encoding="utf-8"))
     pages = manifest["pages"]
     # Home first, then one page per kind, then the rest.

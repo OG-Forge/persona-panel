@@ -1,0 +1,63 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For security problems (for example a way for a live walker to leave the site or type personal data), don't use this form: use **Security → Report a vulnerability** instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The command or prompt you used (mode, market, lens, n). Remove anything private.
+      placeholder: |
+        1. /persona-panel:persona-panel https://example.com --lens ux
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output
+      description: The error or the last lines of the failing script's output.
+      render: text
+  - type: textarea
+    id: doctor
+    attributes:
+      label: config.py doctor output
+      description: "Run `python <skill>/scripts/config.py doctor` and paste the result (remove paths you consider private)."
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: persona-panel version
+      description: "`version` in .claude-plugin/plugin.json, or the commit if you cloned."
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - Plugin (/plugin install)
+        - Manual clone and link
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS, Python and Claude Code versions
+      placeholder: Windows 11, Python 3.12.4, Claude Code 2.1.280
+    validations:
+      required: true

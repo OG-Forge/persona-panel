@@ -10,20 +10,26 @@ silently dropped.
 Usage:
   python sample_personas.py --run RUN_DIR [--market india] [--n 100]
       [--batch-size 10] [--live 8] [--seed 7] [--overrides overrides.json]
+Flag defaults come from the persona-panel config (see paths.py / config.py show).
+--market takes a market name (~/.persona-panel/markets/<name>.json shadows the
+bundled data/markets/<name>.json) or a path to a market JSON file.
 
 overrides.json (all keys optional):
   {"set":      {"age_band": {"18-24": 50, "25-34": 40, "35-44": 10, "45-54": 0, "55+": 0}},
    "multiply": {"device": {"desktop_laptop": 0.5}},
    "notes":    "Brand targets 18-30 streetwear fans"}
 """
+import sys
+
+sys.dont_write_bytecode = True  # keep the skill folder read-only
+
 import argparse
 import json
 import random
-import sys
 from collections import Counter
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "markets"
+import paths
 
 AGE_RANGES = {"18-24": (18, 24), "25-34": (25, 34), "35-44": (35, 44), "45-54": (45, 54), "55+": (55, 72)}
 
@@ -125,13 +131,22 @@ TRAFFIC_PHRASE = {
 }
 
 
+def read_json_file(p):
+    """Parse a JSON file (a UTF-8 BOM, as Windows editors write, is fine); exit with a message if broken."""
+    try:
+        return json.loads(Path(p).read_text(encoding="utf-8-sig"))
+    except ValueError as e:
+        sys.exit(f"{p}: not valid JSON ({e})")
+    except OSError as e:
+        sys.exit(f"{p}: can't read ({e})")
+
+
 def load_market(name_or_path):
-    p = Path(name_or_path)
-    if not p.suffix:
-        p = DATA_DIR / f"{name_or_path}.json"
-    if not p.exists():
-        sys.exit(f"Market profile not found: {p}. Available: {[f.stem for f in DATA_DIR.glob('*.json')]}")
-    return json.loads(p.read_text(encoding="utf-8"))
+    try:
+        p = paths.find_market(name_or_path)
+    except FileNotFoundError as e:
+        sys.exit(str(e))
+    return read_json_file(p)
 
 
 def apply_overrides(market, overrides):
@@ -335,15 +350,16 @@ def pick_live(personas, keys, k):
 
 
 def main():
+    cfg = paths.config_or_exit()
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True, help="Run directory")
     ap.add_argument("--mode", choices=["site", "concept"], default="site")
-    ap.add_argument("--market", default="india")
-    ap.add_argument("--n", type=int, default=100)
-    ap.add_argument("--batch-size", type=int, default=10)
-    ap.add_argument("--live", type=int, default=4, help="How many personas walk the live site in a real browser")
-    ap.add_argument("--seed", type=int, default=7)
-    ap.add_argument("--min-per-screen", type=int, default=10,
+    ap.add_argument("--market", default=cfg["market"], help="Market name or path to a market JSON")
+    ap.add_argument("--n", type=int, default=cfg["n"])
+    ap.add_argument("--batch-size", type=int, default=cfg["batch_size"])
+    ap.add_argument("--live", type=int, default=cfg["live"], help="How many personas walk the live site in a real browser")
+    ap.add_argument("--seed", type=int, default=cfg["seed"])
+    ap.add_argument("--min-per-screen", type=int, default=cfg["min_per_screen"],
                     help="Site mode: at least this many personas per screen type (tablet, laptop, desktop), converted from phone users")
     ap.add_argument("--overrides", help="JSON file with weight overrides")
     args = ap.parse_args()
@@ -351,7 +367,7 @@ def main():
     rng = random.Random(args.seed)
     market = load_market(args.market)
     if args.overrides:
-        apply_overrides(market, json.loads(Path(args.overrides).read_text(encoding="utf-8")))
+        apply_overrides(market, read_json_file(Path(args.overrides).expanduser()))
     if args.mode == "concept":
         market["attributes"] = [a for a in market["attributes"] if a["key"] not in BROWSING_ONLY]
         args.live = 0
@@ -385,7 +401,7 @@ def main():
             batches.append({"batch_id": f"b{len(batches) + 1:02d}", "profile": profile,
                             "persona_ids": group[j:j + args.batch_size]})
 
-    run = Path(args.run)
+    run = paths.run_dir_arg(args.run)
     run.mkdir(parents=True, exist_ok=True)
     (run / "personas.json").write_text(json.dumps(personas, indent=1, ensure_ascii=False), encoding="utf-8")
     (run / "batches.json").write_text(json.dumps({"market": market["name"], "mode": args.mode, "attributes": keys, "panel": batches, "live": live_ids},

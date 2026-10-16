@@ -4,12 +4,18 @@ Usage: python report.py --run RUN_DIR --title "Site or concept name" [--subject 
 Reads personas.json, aggregate.json, synthesis.json and results/*.json and
 writes RUN_DIR/report.html.
 """
+import sys
+
+sys.dont_write_bytecode = True  # keep the skill folder read-only
+
 import argparse
 import base64
 import html
 import io
 import json
 from pathlib import Path
+
+import paths
 
 from PIL import Image
 
@@ -338,7 +344,7 @@ def main():
     ap.add_argument("--title", required=True)
     ap.add_argument("--subject", default="")
     args = ap.parse_args()
-    run = Path(args.run)
+    run = paths.run_dir_arg(args.run)
     (run / "report.html").write_text(render(run, args.title, args.subject), encoding="utf-8")
     print(f"Report: {(run / 'report.html').resolve()}")
 

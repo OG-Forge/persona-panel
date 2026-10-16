@@ -7,19 +7,25 @@ command is still there for the next. Every action prints a compact "look"
 screenshot path) so a walker needs one tool call per step.
 
 Usage (SESSION is a directory, one per walker):
-  walk.py SESSION start URL [--device mobile|desktop]
+  walk.py SESSION start URL [--device NAME]   (default mobile)
   walk.py SESSION look
   walk.py SESSION click REF          | click-text "Add to cart"
   walk.py SESSION type REF "text"    | select REF "option"
   walk.py SESSION press Enter        | scroll down|up | back | goto URL
   walk.py SESSION stop
+
+NAME is a profile from devices.py PROFILES: mobile, mobile_large, tablet, laptop,
+laptop_hd, desktop (desktop_legacy is kept for old runs).
 """
+import sys
+
+sys.dont_write_bytecode = True  # keep the skill folder read-only
+
 import json
 import os
 import re
 import socket
 import subprocess
-import sys
 import time
 from pathlib import Path
 from urllib.parse import urlparse

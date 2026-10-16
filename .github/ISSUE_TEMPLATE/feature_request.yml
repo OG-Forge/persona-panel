@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a new capability, lens, check or improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should persona-panel do? Example commands, config keys or report sections help.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: cost
+    attributes:
+      label: Token cost
+      description: persona-panel tries to keep runs cheap. Does this add LLM work?
+      options:
+        - "No: scripts only"
+        - "Yes: more or bigger agent calls"
+        - Not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to open a pull request for this

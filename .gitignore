@@ -2,3 +2,9 @@
 runs/
 __pycache__/
 *.pyc
+.pytest_cache/
+.persona-panel.json
+*.egg-info/
+.coverage
+htmlcov/
+.claude/settings.local.json

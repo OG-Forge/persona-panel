@@ -1,6 +1,6 @@
 # Writing a custom market profile
 
-Use this when neither `india` nor `global` fits the audience: for example B2B buyers, parents of toddlers, college students, or wedding planners. Copy the shape of `data/markets/india.json` and save it as `RUN_DIR/market.json`, then pass `--market RUN_DIR/market.json`.
+Use this when neither `india` nor `global` fits the audience: for example B2B buyers, parents of toddlers, college students, or wedding planners. Copy the shape of `data/markets/india.json` and save it as `RUN_DIR/market.json`, then pass `--market RUN_DIR/market.json`. To reuse it across runs (and keep it through plugin updates), save it as `~/.persona-panel/markets/<name>.json` and pass `--market <name>`, or set `"market": "<name>"` in the config. A user market with the same name as a built-in one replaces it.
 
 ```json
 {

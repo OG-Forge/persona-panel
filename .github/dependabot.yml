@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    # requirements.txt holds minimum versions (>=); only raise them when a new release needs it.
+    # A bump must also update FALLBACK_REQUIREMENTS in skills/persona-panel/scripts/setup_env.py
+    # (tests/test_packaging.py fails until both match).
+    versioning-strategy: increase-if-necessary
