@@ -31,7 +31,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from devices import PROFILES
-from safety import FOCUSED_KIND_JS, KIND_JS, field_refusal, goto_refusal, on_site, press_refusal, site_host
+from safety import FOCUSED_KIND_JS, KIND_JS, field_refusal, format_look, goto_refusal, on_site, press_refusal, site_host
 
 # Same device sizes as capture.py and probe.py.
 DEVICES = {name: {"size": (p["viewport"]["width"], p["viewport"]["height"]), "ua": p["ua"], "touch": p["mobile"]}
@@ -172,13 +172,7 @@ def look(page, session, state):
     page.screenshot(path=str(shot), type="jpeg", quality=65)
     state_path(session).write_text(json.dumps(state))
     pos = page.evaluate("[Math.round(scrollY), document.documentElement.scrollHeight, innerHeight]")
-    print(f"URL: {info['url']}\nTITLE: {info['title']}\n"
-          f"SCROLL: at {pos[0]}px of a {pos[1]}px page (screen is {pos[2]}px tall, {info['scrollPct']}% seen)")
-    print(f"SCREENSHOT: {shot}")
-    print("CLICKABLE IN VIEW:")
-    print("\n".join(info["items"]) or "(nothing clickable in view)")
-    visible = info["text"]
-    print("ON-SCREEN TEXT:", visible[:700].replace("\n", " | "))
+    print(format_look(info, pos, shot, state.get("nonce")))
 
 
 def start(session, url, device):
@@ -198,7 +192,9 @@ def start(session, url, device):
     if os.name == "nt":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
-    state = {"port": port, "pid": proc.pid, "device": device, "step": 0, "site": site_host(url)}
+    start_file = session / "start.json"
+    nonce = json.loads(start_file.read_text(encoding="utf-8")).get("nonce") if start_file.exists() else None
+    state = {"port": port, "pid": proc.pid, "device": device, "step": 0, "site": site_host(url), "nonce": nonce}
     state_path(session).write_text(json.dumps(state))
     for _ in range(50):
         try:

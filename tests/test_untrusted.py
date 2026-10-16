@@ -82,7 +82,8 @@ def test_site_briefs_wrap_every_site_derived_input(site_run, run_script):
     text = live[0].read_text(encoding="utf-8")
     assert_only_inside_blocks(text, url)
     pid = live[0].stem[len("live_"):]
-    assert read_json(run / "walk" / pid / "start.json") == {"url": url}
+    start = read_json(run / "walk" / pid / "start.json")
+    assert start["url"] == url and start["nonce"] == BLOCK.search(text).group(1)
     assert f'"{run / "walk" / pid}" start --device' in text
 
 

@@ -293,7 +293,7 @@ def main():
             cmd = f'"{args.python}" "{WALK}" "{session}"'
             # The start URL comes from the site, so it never goes into a command line: walk.py reads it from start.json.
             session.mkdir(parents=True, exist_ok=True)
-            (session / "start.json").write_text(json.dumps({"url": entry["url"]}), encoding="utf-8")
+            (session / "start.json").write_text(json.dumps({"url": entry["url"], "nonce": nonce}), encoding="utf-8")
             text = walker_rules.replace("{WALK}", cmd).replace("{DEVICE}", p["view_profile"]) \
                                .replace("{START_URL}", wrap_untrusted(entry["url"], nonce, inline=True)) \
                                .replace("{OUT}", str(out)).replace("{PID}", pid)
