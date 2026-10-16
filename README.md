@@ -20,6 +20,14 @@ A self-contained `report.html` in the run folder:
 - the measured UX checks per screen size, kept separate from persona opinions;
 - outcomes and scores broken down by segment.
 
+### Example
+
+A 30-persona concept run on **Kettlecraft**, a fictional ₹799/month Indian tea subscription made up for this example ([concept](examples/kettlecraft/concept.md), [full report](examples/kettlecraft/report.html), download it and open it in a browser):
+
+[![Example report: Kettlecraft concept review](docs/images/example-report.jpg)](examples/kettlecraft/report.html)
+
+Everyone understood the offer, but nobody would buy yet: the panel wanted proof the brand is real, cash on delivery, and a cheap way to try it. The run cost 3 Haiku batch agents and 1 Sonnet synthesis pass. Concept runs have no screenshots; site runs attach evidence screenshots to every theme.
+
 ## Quick start
 
 Needs Claude Code and Python 3.10+. Inside Claude Code:
